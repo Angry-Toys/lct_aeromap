@@ -1,13 +1,13 @@
 <template>
   <div id="app">
     <h1>Анализ полетов БПЛА</h1>
-    <DroneMap :flightData="sampleData" />
+    <MapOverview :flightData="sampleData" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import DroneMap from '@/components/DroneMap.vue';
+import MapOverview from '@/components/MapOverview.vue';
 
 const sampleData = ref([
   { name: 'Москва', value: 500 },

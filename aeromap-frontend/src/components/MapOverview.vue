@@ -1,6 +1,5 @@
 <template>
   <div class="chart-wrapper">
-    <!-- Убрал v-if для теста, можно вернуть позже -->
     <v-chart
       ref="chartRef"
       :option="option"
@@ -14,17 +13,16 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue';
-import * as echarts from 'echarts';
+import * as echarts from 'echarts';  // Полный импорт по гайдам (без модульного use)
 import VChart from 'vue-echarts';
-import type { GeoJSONSource } from 'echarts/types/src/coord/geo/geoSource';
 
 const chartRef = ref(null);
 const props = defineProps<{
   flightData: Array<{ name: string; value: number }>;
 }>();
 
-const option = ref<any>(null);
-const errorMessage = ref<string>('');
+const option = ref(null);  // Без типов, если TS отключён
+const errorMessage = ref('');
 
 onMounted(async () => {
   console.log('onMounted triggered');
@@ -32,7 +30,7 @@ onMounted(async () => {
 
   console.log('chartRef after nextTick:', chartRef.value);
   if (!chartRef.value) {
-    errorMessage.value = 'Контейнер не найден. Проверь DOM или импорт.';
+    errorMessage.value = 'Контейнер не найден.';
     return;
   }
 
@@ -46,7 +44,7 @@ onMounted(async () => {
       throw new Error('Некорректный GeoJSON.');
     }
 
-    echarts.registerMap('Russia', russiaGeoJSON as GeoJSONSource);
+    echarts.registerMap('Russia', russiaGeoJSON);  // Без типов GeoJSONSource
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -79,20 +77,19 @@ onMounted(async () => {
           name: 'Полеты',
           type: 'map',
           map: 'Russia',
-          roam: true,  // Включён зум и перемещение
-          zoom: 1,     // Начальный масштаб
+          roam: true,  // Зум и перемещение
+          zoom: 1,
           animation: false,
-          silent: false,  // Включён интерактив
-          center: [90, 60],  // Центр на Россию (подстройте, чтобы включить сдвинутую Чукотку)
-          aspectScale: 0.75, // Подстройте под форму России
-          boundingCoords: [[20, 40], [200, 80]],  // Расширьте границы до 200° для охвата сдвинутой части!
+          silent: false,  // Интерактив
+          center: [90, 60],  // Центр на Россию
+          aspectScale: 0.75, // Форма карты
+          boundingCoords: [[20, 40], [200, 80]],  // Границы для Чукотки
           label: {
             normal: {
-              show: false  // Отключены подписи по умолчанию
-              // Если нужны маленькие: show: true, fontSize: 8
+              show: false  // Без подписей по умолчанию
             },
             emphasis: {
-              show: true,  // Подписи при наведении
+              show: true,
               color: '#fff',
               textStyle: { fontSize: 12 }
             }
