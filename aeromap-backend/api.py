@@ -225,15 +225,54 @@ def get_region(lat, lon, gdf):
     point = Point(lon, lat)
     matching = gdf[gdf.geometry.contains(point)]
     if not matching.empty:
-        region = matching['name_ru'].iloc[0]  # Предполагаем, что в shapefile есть 'name_ru'
+        region = matching['name_ru'].iloc[0]
         app.logger.info(f"Found region for {lat}, {lon}: {region}")
         return region
     app.logger.warning(f"No region found for {lat}, {lon}")
     return 'Unknown'
 
-# Эндпоинты (расширенные метрики и графики)
-@app.route('/metrics', methods=['GET'])
+# Новый эндпоинт для /api/regions/flights
+@app.route('/api/regions/flights', methods=['GET'])
 # @oidc.require_login  # Закомментировано для dev
+def get_regions_flights():
+    try:
+        from_str = request.args.get('from')
+        to_str = request.args.get('to')
+        metric = request.args.get('metric', 'count')
+        base_query = "SELECT region, flight_id, duration_min FROM flights"
+        where_clauses = []
+        params = []
+        if from_str:
+            where_clauses.append("dep_date >= %s")
+            params.append(from_str)
+        if to_str:
+            where_clauses.append("dep_date <= %s")
+            params.append(to_str)
+        if where_clauses:
+            base_query += " WHERE " + " AND ".join(where_clauses)
+        base_query += ";"
+        with engine.connect() as conn:
+            df = pd.read_sql(base_query, conn, params=params)
+        if df.empty:
+            return jsonify([])
+        if metric == 'count':
+            agg_df = df.groupby('region').size().reset_index(name='value')
+        elif metric == 'avg_duration':
+            agg_df = df.groupby('region')['duration_min'].mean().reset_index(name='value')
+        # Добавь другие metric, если нужно (e.g. 'total_duration': sum, 'density': custom)
+        else:
+            return jsonify({"error": "Invalid metric (supported: count, avg_duration)"}), 400
+        agg_df = agg_df.sort_values(by='value', ascending=False)
+        agg_df['name'] = agg_df['region']
+        response = jsonify(agg_df[['name', 'value']].to_dict(orient='records'))
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        return response
+    except Exception as e:
+        app.logger.error(f"Error in regions/flights: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# Остальные эндпоинты без изменений...
+@app.route('/metrics', methods=['GET'])
 def get_metrics():
     try:
         year = request.args.get('year')
@@ -308,7 +347,6 @@ def get_metrics():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/report/graph', methods=['GET'])
-# @oidc.require_login  # Закомментировано для dev
 def get_graph():
     try:
         year = request.args.get('year')
@@ -369,7 +407,6 @@ def get_graph():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/upload', methods=['POST'])
-# @oidc.require_login  # Закомментировано для dev
 def upload_data():
     try:
         if 'file' not in request.files:
@@ -414,9 +451,7 @@ def upload_data():
         app.logger.error(f"Error in upload: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Новый эндпоинт для webhook (интеграция с ERP)
 @app.route('/webhook', methods=['POST'])
-# @oidc.require_login  # Закомментировано для dev
 def webhook():
     try:
         data = request.json
@@ -455,7 +490,6 @@ def webhook():
 
 # Эндпоинт для экспорта полного отчета JSON
 @app.route('/report/export', methods=['GET'])
-# @oidc.require_login  # Закомментировано для dev
 def export_report():
     try:
         with engine.connect() as conn:
