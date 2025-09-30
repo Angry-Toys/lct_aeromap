@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
 from flask import Flask, jsonify, send_file, make_response, request
 from flask_swagger_ui import get_swaggerui_blueprint
-# from flask_oidc import OpenIDConnect  # Закомментировано для пропуска аутентификации
+# from flask_oidc import OpenIDConnect  # Закомментировано для dev
 import matplotlib.pyplot as plt
 import io
 import json
@@ -20,33 +20,16 @@ import os
 
 app = Flask(__name__)
 
-# Настройка логирования (для ELK-подобного, но просто файл для dev; в prod интегрировать с Logstash)
+# Настройка логирования
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=1)
 handler.setLevel(logging.INFO)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
 
-# Конфиг для Keycloak/OpenID Connect (закомментировано для dev)
-# app.config.update({
-#     'SECRET_KEY': 'your_secret_key_here',
-#     'OIDC_CLIENT_SECRETS': 'client_secrets.json',
-#     'OIDC_ID_TOKEN_COOKIE_SECURE': False,
-#     'OIDC_USER_INFO_ENABLED': True,
-#     'OIDC_OPENID_REALM': 'your_realm',
-#     'OIDC_SCOPES': ['openid', 'email', 'profile'],
-#     'OIDC_INTROSPECTION_AUTH_METHOD': 'client_secret_post'
-# })
-# oidc = OpenIDConnect(app)
-
-# Swagger UI (документирование по ТЗ)
-SWAGGER_URL = '/swagger'
-API_URL = '/static/swagger.json'
-swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "БПЛА Анализ"})
-app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
-
-DB_URL = 'postgresql://aviation_user:aviation_pass@localhost:5432/aviation_db'
+# DB_URL из env (для Docker) или fallback localhost
+DB_URL = os.getenv('DB_URL', 'postgresql://aviation_user:aviation_pass@localhost:5432/aviation_db')
 engine = create_engine(DB_URL)
-SHAPEFILE_PATH = 'shapefiles/RF.shp'  # Путь к shapefile (обновлять ежемесячно вручную или скриптом)
+SHAPEFILE_PATH = 'shapefiles/RF.shp'
 
 # Функции парсинга (улучшена валидация)
 def parse_coords(coord_str):
@@ -507,7 +490,7 @@ def export_report():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Создать таблицы если не существуют (для init)
+    # Создать таблицы
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS flights (
