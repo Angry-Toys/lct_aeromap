@@ -8,11 +8,27 @@ services:
       POSTGRES_PASSWORD: aviation_pass
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "5432:5432"  # Открывает порт 5432 на хосте для внешнего доступа к БД (если нужно)
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     shm_size: '1gb'  # Для больших данных
+
+  backend:
+    build: .  # Строит из вашего Dockerfile в текущей директории
+    image: aeromap-backend-py  # Имя образа из шага 1
+    container_name: aviation-backend
+    ports:
+      - "5000:5000"  # Открывает порт 5000 на хосте (соответствует EXPOSE 5000 в Dockerfile)
+    depends_on:
+      - postgres  # Запускает бэкенд после БД
+    environment:  # Переменные для подключения к БД (добавьте по необходимости, на основе вашего app.py)
+      DB_HOST: postgres  # Имя сервиса БД
+      DB_NAME: aviation_db
+      DB_USER: aviation_user
+      DB_PASSWORD: aviation_pass
+      DB_PORT: 5432
+    restart: unless-stopped
 
 volumes:
   postgres_data:

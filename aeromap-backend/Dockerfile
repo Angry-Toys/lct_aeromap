@@ -24,4 +24,4 @@ COPY shapefiles/ shapefiles/
 EXPOSE 5000
 
 # Запуск
-CMD ["python", "app.py"]
+CMD ["python", "api.py"]
