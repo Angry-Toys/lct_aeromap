@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
 from flask import Flask, jsonify, send_file, make_response, request
 from flask_swagger_ui import get_swaggerui_blueprint
+from flask_cors import CORS
 # from flask_oidc import OpenIDConnect  # Закомментировано для dev
 import matplotlib.pyplot as plt
 import io
@@ -19,6 +20,7 @@ from logging.handlers import RotatingFileHandler
 import os
 
 app = Flask(__name__)
+CORS(app, origins=['*'])  # Разрешаем запросы с любого origin для теста
 
 # Настройка логирования
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=1)

@@ -9,6 +9,7 @@ geoalchemy2
 flask
 flask-swagger-ui
 flask-oidc
+flask_cors
 matplotlib
 pytest
 six
