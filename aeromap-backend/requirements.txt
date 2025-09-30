@@ -13,3 +13,4 @@ matplotlib
 pytest
 six
 python-dateutil
+openpyxl
