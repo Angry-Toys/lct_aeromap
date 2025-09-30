@@ -1,0 +1,15 @@
+pandas
+geopandas
+shapely
+rtree
+fiona
+psycopg2-binary
+sqlalchemy
+geoalchemy2
+flask
+flask-swagger-ui
+flask-oidc
+matplotlib
+pytest
+six
+python-dateutil
