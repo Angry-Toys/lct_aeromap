@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4  # PostGIS на Postgres 16
+    restart: always
+    environment:
+      POSTGRES_USER: aviation_user
+      POSTGRES_PASSWORD: aviation_pass
+      POSTGRES_DB: aviation_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .  # Build из Dockerfile
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    environment:
+      DB_URL: postgresql://aviation_user:aviation_pass@db:5432/aviation_db  # db — hostname сервиса
+
+volumes:
+  pgdata:
