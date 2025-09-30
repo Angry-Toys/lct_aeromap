@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: aviation-db
+    environment:
+      POSTGRES_DB: aviation_db
+      POSTGRES_USER: aviation_user
+      POSTGRES_PASSWORD: aviation_pass
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    shm_size: '1gb'  # Для больших данных
+
+volumes:
+  postgres_data:
