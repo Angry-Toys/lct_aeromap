@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
 from flask import Flask, jsonify, send_file, make_response, request
 from flask_swagger_ui import get_swaggerui_blueprint
-# from flask_oidc import OpenIDConnect  # Закомментировано для пропуска аутентификации
+# from flask_oidc import OpenIDConnect  # Закомментировано для dev
 import matplotlib.pyplot as plt
 import io
 import json
@@ -20,33 +20,16 @@ import os
 
 app = Flask(__name__)
 
-# Настройка логирования (для ELK-подобного, но просто файл для dev; в prod интегрировать с Logstash)
+# Настройка логирования
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=1)
 handler.setLevel(logging.INFO)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
 
-# Конфиг для Keycloak/OpenID Connect (закомментировано для dev)
-# app.config.update({
-#     'SECRET_KEY': 'your_secret_key_here',
-#     'OIDC_CLIENT_SECRETS': 'client_secrets.json',
-#     'OIDC_ID_TOKEN_COOKIE_SECURE': False,
-#     'OIDC_USER_INFO_ENABLED': True,
-#     'OIDC_OPENID_REALM': 'your_realm',
-#     'OIDC_SCOPES': ['openid', 'email', 'profile'],
-#     'OIDC_INTROSPECTION_AUTH_METHOD': 'client_secret_post'
-# })
-# oidc = OpenIDConnect(app)
-
-# Swagger UI (документирование по ТЗ)
-SWAGGER_URL = '/swagger'
-API_URL = '/static/swagger.json'
-swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "БПЛА Анализ"})
-app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
-
-DB_URL = 'postgresql://aviation_user:aviation_pass@localhost:5432/aviation_db'
+# DB_URL из env (для Docker) или fallback localhost
+DB_URL = os.getenv('DB_URL', 'postgresql://aviation_user:aviation_pass@localhost:5432/aviation_db')
 engine = create_engine(DB_URL)
-SHAPEFILE_PATH = 'shapefiles/RF.shp'  # Путь к shapefile (обновлять ежемесячно вручную или скриптом)
+SHAPEFILE_PATH = 'shapefiles/RF.shp'
 
 # Функции парсинга (улучшена валидация)
 def parse_coords(coord_str):
@@ -198,9 +181,11 @@ def parse_flight_row(row_str):
                 if adarrz_match:
                     arr_lat, arr_lon = parse_coords(adarrz_match.group(1))
         duration = calculate_duration(dep_date, dep_time, arr_date, arr_time)
-        if flight_id is None or dep_lat is None or dep_lon is None or duration is None:
-            app.logger.warning(f"Invalid flight data skipped: {row_str[:100]}...")
+        if flight_id is None or dep_lat is None or dep_lon is None:
+            print(f"Invalid flight data skipped: {row_str[:100]}...")
             return None
+        if duration is None:
+            duration = 0  # Фикс: default 0 if no arr_time
         return {
             'center': center,
             'flight_id': flight_id,
@@ -225,29 +210,69 @@ def get_region(lat, lon, gdf):
     point = Point(lon, lat)
     matching = gdf[gdf.geometry.contains(point)]
     if not matching.empty:
-        region = matching['name_ru'].iloc[0]  # Предполагаем, что в shapefile есть 'name_ru'
+        region = matching['name_ru'].iloc[0]
         app.logger.info(f"Found region for {lat}, {lon}: {region}")
         return region
     app.logger.warning(f"No region found for {lat}, {lon}")
     return 'Unknown'
 
-# Эндпоинты (расширенные метрики и графики)
-@app.route('/metrics', methods=['GET'])
+# Новый эндпоинт для /api/regions/flights
+@app.route('/api/regions/flights', methods=['GET'])
 # @oidc.require_login  # Закомментировано для dev
+def get_regions_flights():
+    try:
+        from_str = request.args.get('from')
+        to_str = request.args.get('to')
+        metric = request.args.get('metric', 'count')
+        base_query = "SELECT region, flight_id, duration_min FROM flights"
+        where_clauses = []
+        params = []
+        if from_str:
+            where_clauses.append("dep_date >= %s")
+            params.append(from_str)
+        if to_str:
+            where_clauses.append("dep_date <= %s")
+            params.append(to_str)
+        if where_clauses:
+            base_query += " WHERE " + " AND ".join(where_clauses)
+        base_query += ";"
+        with engine.connect() as conn:
+            df = pd.read_sql(base_query, conn, params=tuple(params))  # Фикс: tuple(params)
+        if df.empty:
+            return jsonify([])
+        if metric == 'count':
+            agg_df = df.groupby('region').size().reset_index(name='value')
+        elif metric == 'avg_duration':
+            agg_df = df.groupby('region')['duration_min'].mean().reset_index(name='value')
+        # Добавь другие metric, если нужно (e.g. 'total_duration': sum, 'density': custom)
+        else:
+            return jsonify({"error": "Invalid metric (supported: count, avg_duration)"}), 400
+        agg_df = agg_df.sort_values(by='value', ascending=False)
+        agg_df['name'] = agg_df['region']
+        response = jsonify(agg_df[['name', 'value']].to_dict(orient='records'))
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        return response
+    except Exception as e:
+        app.logger.error(f"Error in regions/flights: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# Остальные эндпоинты без изменений...
+@app.route('/metrics', methods=['GET'])
 def get_metrics():
     try:
         year = request.args.get('year')
         month = request.args.get('month')
         region = request.args.get('region')
-        query = """
+        base_query = """
             SELECT region, 
                    COUNT(flight_id) as flight_count, 
                    AVG(duration_min) as avg_duration_min, 
                    SUM(duration_min) as total_duration_min,
                    MAX(flight_count_hourly) as peak_load_hourly,
                    AVG(daily_count) as avg_daily_flights,
-                   MEDIAN(daily_count) as median_daily_flights,
-                   (COUNT(flight_id) / area_km2) as flight_density
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY daily_count) as median_daily_flights,
+                   (COUNT(flight_id) / MAX(area_km2)) as flight_density,
+                   MAX(area_km2) as area_km2
             FROM (
                 SELECT f.region, 
                        f.flight_id, 
@@ -257,37 +282,45 @@ def get_metrics():
                        m.area_km2
                 FROM flights f
                 JOIN metrics m ON f.region = m.region
+                %s  -- WHERE placeholder
             ) sub
             GROUP BY region;
         """
-        if year:
-            query = query.replace("FROM flights f", f"FROM flights f WHERE dep_date LIKE '{year}%'")
-        if month:
-            query = query.replace("FROM flights f", f"FROM flights f WHERE dep_date LIKE '%-{month}-%'")
-        if region:
-            query = query.replace("GROUP BY region", f"WHERE region = '{region}' GROUP BY region")
+        where_clause = ""
+        params = []
+        if year or month or region:
+            where_parts = []
+            if year:
+                where_parts.append("f.dep_date::text LIKE %s")
+                params.append(f"{year}%")
+            if month:
+                where_parts.append("f.dep_date::text LIKE %s")
+                params.append(f"%-{month}-%")
+            if region:
+                where_parts.append("f.region = %s")
+                params.append(region)
+            where_clause = "WHERE " + " AND ".join(where_parts) if where_parts else ""
+        query = base_query % where_clause
         with engine.connect() as conn:
-            metrics_df = pd.read_sql(query, conn)
+            metrics_df = pd.read_sql(query, conn, params=tuple(params))
         if metrics_df.empty:
             return jsonify({"error": "No metrics available"}), 404
         metrics_df = metrics_df.sort_values(by='flight_count', ascending=False)
-        # Добавить рост/падение (сравнение с предыдущим месяцем)
+        # Добавить growth (пример для month)
         if month:
             prev_month = int(month) - 1 if int(month) > 1 else 12
             prev_year = year if prev_month != 12 else str(int(year) - 1)
-            prev_query = query.replace(month, str(prev_month).zfill(2)).replace(year, prev_year)
-            prev_df = pd.read_sql(prev_query, conn)
+            prev_where = "WHERE f.dep_date::text LIKE %s AND f.dep_date::text LIKE %s" if year and month else ""
+            prev_params = [f"{prev_year}%", f"%-{str(prev_month).zfill(2)}-%"]
+            prev_query = base_query % prev_where
+            prev_df = pd.read_sql(prev_query, conn, params=tuple(prev_params))
             metrics_df = metrics_df.merge(prev_df[['region', 'flight_count']], on='region', suffixes=('', '_prev'))
             metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev']) / metrics_df['flight_count_prev']) * 100
-        # Дневная активность (по часам)
-        hourly_query = """
-            SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count
-            FROM flights
-            GROUP BY hour;
-        """
+        # Hourly
+        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights GROUP BY hour;"
         hourly_df = pd.read_sql(hourly_query, conn)
         metrics_df['hourly_distribution'] = [hourly_df.to_dict(orient='records')] * len(metrics_df)
-        # Нулевые дни
+        # Zero days
         zero_days_query = """
             SELECT region, COUNT(*) as zero_days
             FROM (
@@ -308,7 +341,6 @@ def get_metrics():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/report/graph', methods=['GET'])
-# @oidc.require_login  # Закомментировано для dev
 def get_graph():
     try:
         year = request.args.get('year')
@@ -369,7 +401,6 @@ def get_graph():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/upload', methods=['POST'])
-# @oidc.require_login  # Закомментировано для dev
 def upload_data():
     try:
         if 'file' not in request.files:
@@ -414,9 +445,7 @@ def upload_data():
         app.logger.error(f"Error in upload: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Новый эндпоинт для webhook (интеграция с ERP)
 @app.route('/webhook', methods=['POST'])
-# @oidc.require_login  # Закомментировано для dev
 def webhook():
     try:
         data = request.json
@@ -455,12 +484,16 @@ def webhook():
 
 # Эндпоинт для экспорта полного отчета JSON
 @app.route('/report/export', methods=['GET'])
-# @oidc.require_login  # Закомментировано для dev
 def export_report():
     try:
         with engine.connect() as conn:
             flights_df = pd.read_sql("SELECT * FROM flights;", conn)
             metrics_df = pd.read_sql("SELECT * FROM metrics;", conn)
+        # Фикс: convert date to str, time to 'HH:MM:SS'
+        flights_df['dep_date'] = flights_df['dep_date'].astype(str)
+        flights_df['arr_date'] = flights_df['arr_date'].astype(str)
+        flights_df['dep_time'] = flights_df['dep_time'].apply(lambda x: x.strftime('%H:%M:%S') if pd.notnull(x) else None)
+        flights_df['arr_time'] = flights_df['arr_time'].apply(lambda x: x.strftime('%H:%M:%S') if pd.notnull(x) else None)
         report = {
             "flights": flights_df.to_dict(orient='records'),
             "metrics": metrics_df.to_dict(orient='records')
@@ -471,9 +504,9 @@ def export_report():
     except Exception as e:
         app.logger.error(f"Error in export: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
+    
 if __name__ == '__main__':
-    # Создать таблицы если не существуют (для init)
+    # Создать таблицы
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS flights (
