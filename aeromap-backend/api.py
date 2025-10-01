@@ -37,7 +37,7 @@ API_URL = '/static/swagger.json'
 swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "БПЛА Анализ"})
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
-# Функции парсинга
+# Функции парсинга (без изменений)
 def parse_coords(coord_str):
     if not coord_str:
         return None, None
@@ -222,7 +222,7 @@ def get_region(lat, lon, gdf):
     app.logger.warning(f"No region found for {lat}, {lon}")
     return 'Unknown'
 
-# Новый эндпоинт для /api/regions/flights
+# Новый эндпоинт для /api/regions/flights (без изменений)
 @app.route('/api/regions/flights', methods=['GET'])
 def get_regions_flights():
     try:
@@ -272,21 +272,21 @@ def get_metrics():
             JOIN metrics m ON f.region = m.region
         """
         where_parts = []
-        params = []
+        params = {}
         if year:
-            where_parts.append("f.dep_date::text LIKE %s")
-            params.append(f"{year}%")
+            where_parts.append("f.dep_date::text LIKE :year")
+            params['year'] = f"{year}%"
         if month:
-            where_parts.append("f.dep_date::text LIKE %s")
-            params.append(f"%-{month}-%")
+            where_parts.append("f.dep_date::text LIKE :month")
+            params['month'] = f"%-{month}-%"
         if region:
-            where_parts.append("f.region = %s")
-            params.append(region)
+            where_parts.append("f.region = :region")
+            params['region'] = region
         if where_parts:
             base_query += " WHERE " + " AND ".join(where_parts)
         base_query += ";"
         with engine.connect() as conn:
-            df = pd.read_sql(base_query, conn, params=tuple(params))
+            df = pd.read_sql(text(base_query), conn, params=params)
         if df.empty:
             return jsonify({"error": "No metrics available"}), 404
         # Рассчитай метрики в Pandas (проще и стабильнее)
@@ -310,16 +310,21 @@ def get_metrics():
         if month:
             prev_month = int(month) - 1 if int(month) > 1 else 12
             prev_year = year if prev_month != 12 else str(int(year) - 1)
-            prev_params = [f"{prev_year}%", f"%-{str(prev_month).zfill(2)}-%"]
-            prev_base = base_query.replace("WHERE " + " AND ".join(where_parts), "WHERE f.dep_date::text LIKE %s AND f.dep_date::text LIKE %s")
-            with engine.connect() as conn:  # Separate
-                prev_df = pd.read_sql(prev_base, conn, params=tuple(prev_params))
+            prev_params = {'prev_year': f"{prev_year}%", 'prev_month': f"%-{str(prev_month).zfill(2)}-%"}
+            prev_base = """
+                SELECT f.region, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
+                FROM flights f
+                JOIN metrics m ON f.region = m.region
+                WHERE f.dep_date::text LIKE :prev_year AND f.dep_date::text LIKE :prev_month;
+            """
+            with engine.connect() as conn:
+                prev_df = pd.read_sql(text(prev_base), conn, params=prev_params)
             if not prev_df.empty:
                 prev_counts = prev_df.groupby('region')['flight_id'].count().reset_index(name='flight_count_prev')
                 metrics_df = metrics_df.merge(prev_counts, on='region', how='left')
                 metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev'].fillna(0)) / metrics_df['flight_count_prev'].fillna(1)) * 100
-        # Hourly distribution (separate)
-        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights GROUP BY hour;"
+        # Hourly distribution (separate, with fix for NaN)
+        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights WHERE dep_time IS NOT NULL GROUP BY hour;"
         with engine.connect() as conn:
             hourly_df = pd.read_sql(hourly_query, conn)
         metrics_df['hourly_distribution'] = [hourly_df.to_dict(orient='records')] * len(metrics_df)
@@ -358,16 +363,18 @@ def get_graph():
         format_type = request.args.get('format', 'png')
         if type_graph == 'top_regions':
             query = "SELECT region, flight_count FROM metrics ORDER BY flight_count DESC LIMIT 10;"
+            params = {}
             if year:
-                query = f"""
+                query = """
                     SELECT region, COUNT(flight_id) as flight_count
                     FROM flights
-                    WHERE dep_date LIKE '{year}%'
+                    WHERE dep_date::text LIKE :year
                     GROUP BY region
                     ORDER BY flight_count DESC LIMIT 10;
                 """
+                params = {'year': f"{year}%"}
             with engine.connect() as conn:
-                metrics_df = pd.read_sql(query, conn)
+                metrics_df = pd.read_sql(text(query), conn, params=params)
             if metrics_df.empty:
                 return jsonify({"error": "No data for graph"}), 404
             plt.figure(figsize=(10, 6))
@@ -384,10 +391,18 @@ def get_graph():
                 GROUP BY dep_date
                 ORDER BY dep_date;
             """
+            params = {}
             if year:
-                query = query.replace("FROM flights", f"FROM flights WHERE dep_date LIKE '{year}%'")
+                query = """
+                    SELECT dep_date, COUNT(flight_id) as flight_count
+                    FROM flights
+                    WHERE dep_date::text LIKE :year
+                    GROUP BY dep_date
+                    ORDER BY dep_date;
+                """
+                params = {'year': f"{year}%"}
             with engine.connect() as conn:
-                ts_df = pd.read_sql(query, conn)
+                ts_df = pd.read_sql(text(query), conn, params=params)
             if ts_df.empty:
                 return jsonify({"error": "No data for time series"}), 404
             plt.figure(figsize=(12, 6))
@@ -508,7 +523,10 @@ def export_report():
             "flights": flights_df.to_dict(orient='records'),
             "metrics": metrics_df.to_dict(orient='records')
         }
-        response = jsonify(report)
+        # Фикс escaping: Используем json.dumps с ensure_ascii=False для чистого UTF-8
+        json_content = json.dumps(report, ensure_ascii=False, indent=4)
+        response = make_response(json_content)
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
         response.headers['Content-Disposition'] = 'attachment; filename=full_report.json'
         return response
     except Exception as e:
