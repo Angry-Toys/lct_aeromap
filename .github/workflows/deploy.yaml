@@ -9,59 +9,51 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Yandex CLI
-      run: curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash && echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH
+      run: |
+        curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+        echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH
     - name: Configure Yandex Cloud
-      run: echo "${{ secrets.YC_SA_JSON_B64 }}" | base64 -d > sa-key.json && yc config set service-account-key sa-key.json && yc config set cloud-id ${{ secrets.YC_CLOUD_ID }} && yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
+      run: |
+        echo "${{ secrets.YC_SA_JSON_B64 }}" | base64 -d > sa-key.json
+        yc config set service-account-key sa-key.json
+        yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
+        yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
     - name: Auth to Container Registry
       run: yc container registry configure-docker
     - name: Build & Push Backend
-      run: docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} ./aeromap-backend && docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
+      run: |
+        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} ./aeromap-backend
+        docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
     - name: Build & Push Frontend
-      run: docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} ./aeromap-frontend && docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
+      run: |
+        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} ./aeromap-frontend
+        docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Install AWS CLI
+    - name: Install Yandex CLI
       run: |
-        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-        unzip awscliv2.zip
-        sudo ./aws/install
-        aws --version
+        curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+        echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH
+    - name: Configure Yandex Cloud
+      run: |
+        echo "${{ secrets.YC_SA_JSON_B64 }}" | base64 -d > sa-key.json
+        yc config set service-account-key sa-key.json
+        yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
+        yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
     - name: Set up kubectl
       uses: azure/setup-kubectl@v4
       with:
         version: 'v1.34.1'
     - name: Generate kubeconfig
-      env:
-        ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY_ID }}
-        SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_ACCESS_KEY }}
       run: |
-        IAM_TOKEN=$(aws iam create-access-token --endpoint-url https://iam.api.cloud.yandex.net --access-key $ACCESS_KEY_ID --secret-key $SECRET_ACCESS_KEY | jq -r '.iamToken')
-        cat > kubeconfig.yaml << EOF
-        apiVersion: v1
-        clusters:
-        - cluster:
-            certificate-authority-data: ${{ secrets.YC_K8S_CA }}
-            server: ${{ secrets.YC_K8S_ENDPOINT }}
-          name: aeromap-cluster
-        contexts:
-        - context:
-            cluster: aeromap-cluster
-            user: ci-cd-user
-          name: aeromap-cluster
-        current-context: aeromap-cluster
-        kind: Config
-        users:
-        - name: ci-cd-user
-          user:
-            token: $IAM_TOKEN
-        EOF
+        yc managed-kubernetes cluster get-credentials --id ${{ secrets.YC_CLUSTER_ID }} --external --kubeconfig kubeconfig.yaml
         export KUBECONFIG=$PWD/kubeconfig.yaml
     - name: Update Deployments
       run: |
-        kubectl -n aeromap set image deployment/backend backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
-        kubectl -n aeromap set image deployment/frontend frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
-        kubectl rollout status deployment/backend -n aeromap --timeout=5m
-        kubectl rollout status deployment/frontend -n aeromap --timeout=5m
+        kubectl -n aeromap set image deployment/aeromap-backend aeromap-backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
+        kubectl -n aeromap set image deployment/aeromap-frontend aeromap-frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
+        kubectl rollout status deployment/aeromap-backend -n aeromap --timeout=5m
+        kubectl rollout status deployment/aeromap-frontend -n aeromap --timeout=5m
