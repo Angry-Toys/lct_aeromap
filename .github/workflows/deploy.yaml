@@ -28,12 +28,12 @@ jobs:
 
     - name: Build & Push Backend
       run: |
-        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} ./backend
+        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} ./aeromap-backend
         docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
 
     - name: Build & Push Frontend
       run: |
-        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} ./frontend
+        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} ./aeromap-frontend
         docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
 
   deploy:
