@@ -12,6 +12,7 @@ flask-oidc
 flask_cors
 matplotlib
 pytest
+pytest-cov
 six
 python-dateutil
 openpyxl
