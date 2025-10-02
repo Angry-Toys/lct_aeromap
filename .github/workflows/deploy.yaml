@@ -50,18 +50,20 @@ jobs:
     - name: Set up kubectl
       uses: azure/setup-kubectl@v4
       with:
-        version: 'v1.34.1'
-    - name: Generate kubeconfig
+        version: 'v1.29.0'  # Измените на версию, совместимую с вашим кластером
+    - name: Generate and Verify kubeconfig
       run: |
         yc managed-kubernetes cluster get-credentials --id ${{ secrets.YC_CLUSTER_ID }} --external --kubeconfig kubeconfig.yaml
         cat kubeconfig.yaml || echo "Failed to create kubeconfig"
+        ls -la kubeconfig.yaml  # Отладка: проверка файла
+        /home/runner/yandex-cloud/bin/yc k8s create-token --profile=default || echo "Failed to get token"  # Отладка: проверка токена
         export KUBECONFIG=$PWD/kubeconfig.yaml
-    - name: Verify kubeconfig
-      run: |
-        kubectl cluster-info
+        kubectl cluster-info  # Теперь должно работать
     - name: Update Deployments
+      env:
+        KUBECONFIG: ./kubeconfig.yaml
       run: |
-        kubectl -n aeromap set image deployment/aeromap-backend aeromap-backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
-        kubectl -n aeromap set image deployment/aeromap-frontend aeromap-frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
-        kubectl rollout status deployment/aeromap-backend -n aeromap --timeout=5m
-        kubectl rollout status deployment/aeromap-frontend -n aeromap --timeout=5m
+        kubectl -n aeromap set image deployment/aeromap-backend aeromap-backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} --kubeconfig kubeconfig.yaml
+        kubectl -n aeromap set image deployment/aeromap-frontend aeromap-frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} --kubeconfig kubeconfig.yaml
+        kubectl rollout status deployment/aeromap-backend -n aeromap --timeout=5m --kubeconfig kubeconfig.yaml
+        kubectl rollout status deployment/aeromap-frontend -n aeromap --timeout=5m --kubeconfig kubeconfig.yaml
