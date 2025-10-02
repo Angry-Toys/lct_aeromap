@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aeromap-frontend
+  namespace: aeromap
 spec:
   replicas: 1
   selector:
@@ -14,18 +15,19 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-frontend:0.1
+        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-frontend:0.2
         ports:
         - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: aeromap-frontend
+  name: frontend-svc
+  namespace: aeromap
 spec:
-  type: LoadBalancer
   selector:
     app: aeromap-frontend
   ports:
   - port: 80
     targetPort: 80
+  type: ClusterIP

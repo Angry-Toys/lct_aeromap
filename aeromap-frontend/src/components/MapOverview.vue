@@ -1,53 +1,76 @@
 <template>
   <div class="chart-wrapper">
+
+    <div v-if="isLoading" class="status-overlay">
+      <p>Загрузка карты...</p>
+    </div>
+
+    <div v-else-if="errorMessage" class="status-overlay error">
+      <p>Не удалось загрузить данные карты.</p>
+      <p class="error-details">{{ errorMessage }}</p>
+      <button @click="fetchData">Попробовать снова</button>
+    </div>
+
     <v-chart
+      v-else
       ref="chartRef"
       :option="option"
       :init-opts="{ renderer: 'canvas' }"
       autoresize
       class="map-container"
     />
-    <div v-if="errorMessage" style="color: red;">{{ errorMessage }}</div>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue';
-import * as echarts from 'echarts';  // Полный импорт по гайдам (без модульного use)
+import * as echarts from 'echarts';
 import VChart from 'vue-echarts';
+import axios from 'axios';
 
+// --- Состояние компонента ---
 const chartRef = ref(null);
-const props = defineProps<{
-  flightData: Array<{ name: string; value: number }>;
-}>();
-
-const option = ref(null);  // Без типов, если TS отключён
+const option = ref(null);
 const errorMessage = ref('');
+const isLoading = ref(false);
+const flightData = ref([]);
 
-onMounted(async () => {
-  console.log('onMounted triggered');
-  await nextTick();
+// --- Логика загрузки данных ---
+const fetchData = async () => {
+  isLoading.value = true;
+  errorMessage.value = ''; // Сбрасываем предыдущую ошибку
+  option.value = null; // Очищаем старые данные карты
 
-  console.log('chartRef after nextTick:', chartRef.value);
-  if (!chartRef.value) {
-    errorMessage.value = 'Контейнер не найден.';
-    return;
-  }
-
-  let russiaGeoJSON: any;
   try {
-    const response = await fetch('/maps/Russia.geojson');
-    if (!response.ok) throw new Error(`HTTP: ${response.status}`);
-    russiaGeoJSON = await response.json();
+    console.log('Начинаем загрузку данных...');
 
-    if (!russiaGeoJSON || russiaGeoJSON.type !== 'FeatureCollection') {
-      throw new Error('Некорректный GeoJSON.');
+    // Загрузка данных о полетах
+    const response = await axios.get('http://localhost:5000/api/regions/flights', {
+      params: {
+        from: '2025-01-01',
+        to: '2025-09-30',
+        metric: 'count'
+      }
+    });
+    flightData.value = response.data;
+    console.log('Данные из API получены:', flightData.value);
+
+    // Загрузка GeoJSON файла карты
+    const geoResponse = await fetch('/maps/Russia.geojson');
+    if (!geoResponse.ok) {
+      throw new Error(`Ошибка загрузки GeoJSON: HTTP ${geoResponse.status}`);
     }
+    const russiaGeoJSON = await geoResponse.json();
+    if (!russiaGeoJSON || russiaGeoJSON.type !== 'FeatureCollection') {
+      throw new Error('Некорректный формат GeoJSON.');
+    }
+    console.log('GeoJSON загружен успешно.');
 
-    echarts.registerMap('Russia', russiaGeoJSON);  // Без типов GeoJSONSource
+    // Регистрация карты в ECharts
+    echarts.registerMap('Russia', russiaGeoJSON);
 
-    await new Promise(resolve => setTimeout(resolve, 100));
-
+    // --- Формирование опций для карты ---
     option.value = {
       title: {
         text: 'Распределение полетов БПЛА по регионам РФ',
@@ -60,16 +83,23 @@ onMounted(async () => {
       },
       visualMap: {
         min: 0,
-        max: Math.max(...props.flightData.map(d => d.value || 0)),
+        max: Math.max(...flightData.value.map(d => d.value || 0)),
         text: ['Высокая активность', 'Низкая'],
         realtime: false,
         calculable: true,
-        inRange: { color: ['#2d8aff', '#0062E8'] }
+        inRange: { color: ['#2d8aff', '#0062E8'] },
+        textStyle: { color: '#fff' }
       },
       toolbox: {
         show: true,
+        orient: 'vertical',
+        left: 'right',
+        top: 'center',
         feature: {
-          saveAsImage: { title: 'Экспорт в PNG', type: 'png' }
+          saveAsImage: { title: 'Сохранить как PNG', backgroundColor: '#0e4a91' }
+        },
+        iconStyle: {
+          borderColor: '#fff'
         }
       },
       series: [
@@ -77,22 +107,16 @@ onMounted(async () => {
           name: 'Полеты',
           type: 'map',
           map: 'Russia',
-          roam: true,  // Зум и перемещение
+          roam: true,
           zoom: 1,
           animation: false,
-          silent: false,  // Интерактив
-          center: [90, 60],  // Центр на Россию
-          aspectScale: 0.75, // Форма карты
-          boundingCoords: [[20, 40], [200, 80]],  // Границы для Чукотки
+          silent: false,
+          center: [90, 60],
+          aspectScale: 0.75,
+          boundingCoords: [[20, 40], [200, 80]],
           label: {
-            normal: {
-              show: false  // Без подписей по умолчанию
-            },
-            emphasis: {
-              show: true,
-              color: '#fff',
-              textStyle: { fontSize: 12 }
-            }
+            show: false,
+            emphasis: { show: true, color: '#fff' }
           },
           itemStyle: {
             normal: {
@@ -102,18 +126,31 @@ onMounted(async () => {
               shadowBlur: 10,
               shadowOffsetY: 10
             },
-            emphasis: {
-              areaColor: '#0062E8'
-            }
+            emphasis: { areaColor: '#0062E8' }
           },
-          data: props.flightData
+          data: flightData.value
         }
       ]
     };
+
+    console.log('Карта успешно инициализирована.');
   } catch (error) {
-    errorMessage.value = `Ошибка: ${error instanceof Error ? error.message : 'Неизвестная'}`;
-    console.error(error);
+    errorMessage.value = error.message || 'Произошла неизвестная ошибка.';
+    console.error('Подробности ошибки:', error);
+    // Дополнительная информация для отладки
+    if (error.response) {
+      console.error('API статус:', error.response.status, 'Данные:', error.response.data);
+    } else if (error.request) {
+      console.error('Нет ответа от сервера. Проверьте API и сетевое соединение.');
+    }
+  } finally {
+    isLoading.value = false;
   }
+};
+
+// --- Хук жизненного цикла ---
+onMounted(() => {
+  fetchData();
 });
 </script>
 
@@ -122,18 +159,58 @@ onMounted(async () => {
   width: 80vw;
   height: 80vh;
   position: relative;
-}
-:deep(.map-container) {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(to bottom, #2d8aff, #0062E8);
+  background: linear-gradient(to bottom, #4abef8, #0062E8);
   border: 2px solid #30ceda;
   box-shadow: 0 0 15px rgba(34, 107, 203, 0.5);
   border-radius: 10px;
   overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
+
+.map-container,
 :deep(.echarts) {
   width: 100% !important;
   height: 100% !important;
+}
+
+/* Стили для оверлеев состояния */
+.status-overlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  text-align: center;
+  color: #fff;
+  font-size: 1.2rem;
+}
+
+.status-overlay.error {
+  color: #ffdddd;
+}
+
+.error-details {
+  font-size: 0.9rem;
+  color: #ffb8b8;
+  margin-top: 5px;
+  max-width: 80%;
+}
+
+.status-overlay button {
+  margin-top: 20px;
+  padding: 10px 20px;
+  font-size: 1rem;
+  color: #fff;
+  background-color: #30ceda;
+  border: 1px solid #fff;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.status-overlay button:hover {
+  background-color: #26a2aa;
 }
 </style>

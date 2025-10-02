@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
 from flask import Flask, jsonify, send_file, make_response, request
 from flask_swagger_ui import get_swaggerui_blueprint
+from flask_cors import CORS
 # from flask_oidc import OpenIDConnect  # Закомментировано для dev
 import matplotlib.pyplot as plt
 import io
@@ -19,6 +20,7 @@ from logging.handlers import RotatingFileHandler
 import os
 
 app = Flask(__name__)
+CORS(app, origins=['*'])  # Разрешаем запросы с любого origin для теста
 
 # Настройка логирования
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=1)
@@ -28,10 +30,16 @@ app.logger.setLevel(logging.INFO)
 
 # DB_URL из env (для Docker) или fallback localhost
 DB_URL = os.getenv('DB_URL', 'postgresql://aviation_user:aviation_pass@localhost:5432/aviation_db')
-engine = create_engine(DB_URL)
+engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=3600)
 SHAPEFILE_PATH = 'shapefiles/RF.shp'
 
-# Функции парсинга (улучшена валидация)
+# Swagger UI
+SWAGGER_URL = '/swagger'
+API_URL = '/static/swagger.json'
+swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "БПЛА Анализ"})
+app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
+
+# Функции парсинга (без изменений)
 def parse_coords(coord_str):
     if not coord_str:
         return None, None
@@ -182,10 +190,10 @@ def parse_flight_row(row_str):
                     arr_lat, arr_lon = parse_coords(adarrz_match.group(1))
         duration = calculate_duration(dep_date, dep_time, arr_date, arr_time)
         if flight_id is None or dep_lat is None or dep_lon is None:
-            print(f"Invalid flight data skipped: {row_str[:100]}...")
+            app.logger.warning(f"Invalid flight data skipped: {row_str[:100]}...")
             return None
         if duration is None:
-            duration = 0  # Фикс: default 0 if no arr_time
+            duration = 0  # Default 0 if no arr_time
         return {
             'center': center,
             'flight_id': flight_id,
@@ -216,9 +224,8 @@ def get_region(lat, lon, gdf):
     app.logger.warning(f"No region found for {lat}, {lon}")
     return 'Unknown'
 
-# Новый эндпоинт для /api/regions/flights
+# Новый эндпоинт для /api/regions/flights (без изменений)
 @app.route('/api/regions/flights', methods=['GET'])
-# @oidc.require_login  # Закомментировано для dev
 def get_regions_flights():
     try:
         from_str = request.args.get('from')
@@ -237,14 +244,13 @@ def get_regions_flights():
             base_query += " WHERE " + " AND ".join(where_clauses)
         base_query += ";"
         with engine.connect() as conn:
-            df = pd.read_sql(base_query, conn, params=tuple(params))  # Фикс: tuple(params)
+            df = pd.read_sql(base_query, conn, params=tuple(params))
         if df.empty:
             return jsonify([])
         if metric == 'count':
             agg_df = df.groupby('region').size().reset_index(name='value')
         elif metric == 'avg_duration':
             agg_df = df.groupby('region')['duration_min'].mean().reset_index(name='value')
-        # Добавь другие metric, если нужно (e.g. 'total_duration': sum, 'density': custom)
         else:
             return jsonify({"error": "Invalid metric (supported: count, avg_duration)"}), 400
         agg_df = agg_df.sort_values(by='value', ascending=False)
@@ -256,7 +262,6 @@ def get_regions_flights():
         app.logger.error(f"Error in regions/flights: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Остальные эндпоинты без изменений...
 @app.route('/metrics', methods=['GET'])
 def get_metrics():
     try:
@@ -264,75 +269,87 @@ def get_metrics():
         month = request.args.get('month')
         region = request.args.get('region')
         base_query = """
-            SELECT region, 
-                   COUNT(flight_id) as flight_count, 
-                   AVG(duration_min) as avg_duration_min, 
-                   SUM(duration_min) as total_duration_min,
-                   MAX(flight_count_hourly) as peak_load_hourly,
-                   AVG(daily_count) as avg_daily_flights,
-                   percentile_cont(0.5) WITHIN GROUP (ORDER BY daily_count) as median_daily_flights,
-                   (COUNT(flight_id) / MAX(area_km2)) as flight_density,
-                   MAX(area_km2) as area_km2
-            FROM (
-                SELECT f.region, 
-                       f.flight_id, 
-                       f.duration_min,
-                       COUNT(f.flight_id) OVER (PARTITION BY DATE_TRUNC('hour', dep_date + dep_time)) as flight_count_hourly,
-                       COUNT(f.flight_id) OVER (PARTITION BY dep_date) as daily_count,
-                       m.area_km2
-                FROM flights f
-                JOIN metrics m ON f.region = m.region
-                %s  -- WHERE placeholder
-            ) sub
-            GROUP BY region;
+            SELECT f.region, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
+            FROM flights f
+            JOIN metrics m ON f.region = m.region
         """
-        where_clause = ""
-        params = []
-        if year or month or region:
-            where_parts = []
-            if year:
-                where_parts.append("f.dep_date::text LIKE %s")
-                params.append(f"{year}%")
-            if month:
-                where_parts.append("f.dep_date::text LIKE %s")
-                params.append(f"%-{month}-%")
-            if region:
-                where_parts.append("f.region = %s")
-                params.append(region)
-            where_clause = "WHERE " + " AND ".join(where_parts) if where_parts else ""
-        query = base_query % where_clause
+        where_parts = []
+        params = {}
+        if year:
+            where_parts.append("f.dep_date::text LIKE :year")
+            params['year'] = f"{year}%"
+        if month:
+            where_parts.append("f.dep_date::text LIKE :month")
+            params['month'] = f"%-{month}-%"
+        if region:
+            where_parts.append("f.region = :region")
+            params['region'] = region
+        if where_parts:
+            base_query += " WHERE " + " AND ".join(where_parts)
+        base_query += ";"
         with engine.connect() as conn:
-            metrics_df = pd.read_sql(query, conn, params=tuple(params))
-        if metrics_df.empty:
+            df = pd.read_sql(text(base_query), conn, params=params)
+        if df.empty:
             return jsonify({"error": "No metrics available"}), 404
+        # Рассчитай метрики в Pandas (проще и стабильнее)
+        metrics_df = df.groupby('region').agg(
+            flight_count=('flight_id', 'count'),
+            avg_duration_min=('duration_min', 'mean'),
+            total_duration_min=('duration_min', 'sum'),
+            area_km2=('area_km2', 'max')
+        ).reset_index()
+        metrics_df['flight_density'] = metrics_df['flight_count'] / metrics_df['area_km2']
+        # Peak hourly (groupby hour from dep_time)
+        df['dep_datetime'] = pd.to_datetime(df['dep_date'].astype(str) + ' ' + df['dep_time'].astype(str))
+        df['hour'] = df['dep_datetime'].dt.floor('H')
+        metrics_df['peak_load_hourly'] = df.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
+        # Daily stats
+        daily_counts = df.groupby(['region', 'dep_date'])['flight_id'].count().reset_index(name='daily_count')
+        metrics_df = metrics_df.merge(daily_counts.groupby('region')['daily_count'].agg(['mean', 'median']).reset_index(), on='region')
+        metrics_df = metrics_df.rename(columns={'mean': 'avg_daily_flights', 'median': 'median_daily_flights'})
         metrics_df = metrics_df.sort_values(by='flight_count', ascending=False)
-        # Добавить growth (пример для month)
+        # Growth (separate conn)
         if month:
             prev_month = int(month) - 1 if int(month) > 1 else 12
             prev_year = year if prev_month != 12 else str(int(year) - 1)
-            prev_where = "WHERE f.dep_date::text LIKE %s AND f.dep_date::text LIKE %s" if year and month else ""
-            prev_params = [f"{prev_year}%", f"%-{str(prev_month).zfill(2)}-%"]
-            prev_query = base_query % prev_where
-            prev_df = pd.read_sql(prev_query, conn, params=tuple(prev_params))
-            metrics_df = metrics_df.merge(prev_df[['region', 'flight_count']], on='region', suffixes=('', '_prev'))
-            metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev']) / metrics_df['flight_count_prev']) * 100
-        # Hourly
-        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights GROUP BY hour;"
-        hourly_df = pd.read_sql(hourly_query, conn)
+            prev_params = {'prev_year': f"{prev_year}%", 'prev_month': f"%-{str(prev_month).zfill(2)}-%"}
+            prev_base = """
+                SELECT f.region, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
+                FROM flights f
+                JOIN metrics m ON f.region = m.region
+                WHERE f.dep_date::text LIKE :prev_year AND f.dep_date::text LIKE :prev_month;
+            """
+            with engine.connect() as conn:
+                prev_df = pd.read_sql(text(prev_base), conn, params=prev_params)
+            if not prev_df.empty:
+                prev_counts = prev_df.groupby('region')['flight_id'].count().reset_index(name='flight_count_prev')
+                metrics_df = metrics_df.merge(prev_counts, on='region', how='left')
+                metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev'].fillna(0)) / metrics_df['flight_count_prev'].fillna(1)) * 100
+        # Hourly distribution (separate, with fix for NaN)
+        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights WHERE dep_time IS NOT NULL GROUP BY hour;"
+        with engine.connect() as conn:
+            hourly_df = pd.read_sql(hourly_query, conn)
         metrics_df['hourly_distribution'] = [hourly_df.to_dict(orient='records')] * len(metrics_df)
-        # Zero days
+        # Zero days (fixed for empty)
         zero_days_query = """
-            SELECT region, COUNT(*) as zero_days
-            FROM (
-                SELECT generate_series(MIN(dep_date), MAX(dep_date), '1 day') as day
+            SELECT m.region, COUNT(*) as zero_days
+            FROM metrics m
+            LEFT JOIN (
+                SELECT generate_series(
+                    COALESCE(MIN(dep_date), CURRENT_DATE),
+                    COALESCE(MAX(dep_date), CURRENT_DATE),
+                    '1 day'::interval
+                ) as day
                 FROM flights
-            ) days
-            LEFT JOIN flights f ON days.day = f.dep_date
+                WHERE dep_date IS NOT NULL
+            ) days ON TRUE
+            LEFT JOIN flights f ON days.day = f.dep_date AND f.region = m.region
             WHERE f.flight_id IS NULL
-            GROUP BY region;
+            GROUP BY m.region;
         """
-        zero_df = pd.read_sql(zero_days_query, conn)
-        metrics_df = metrics_df.merge(zero_df, on='region', how='left')
+        with engine.connect() as conn:
+            zero_df = pd.read_sql(zero_days_query, conn)
+        metrics_df = metrics_df.merge(zero_df, on='region', how='left').fillna({'zero_days': 0})
         response = jsonify(metrics_df.to_dict(orient='records'))
         response.headers['Content-Type'] = 'application/json; charset=utf-8'
         return response
@@ -348,16 +365,18 @@ def get_graph():
         format_type = request.args.get('format', 'png')
         if type_graph == 'top_regions':
             query = "SELECT region, flight_count FROM metrics ORDER BY flight_count DESC LIMIT 10;"
+            params = {}
             if year:
-                query = f"""
+                query = """
                     SELECT region, COUNT(flight_id) as flight_count
                     FROM flights
-                    WHERE dep_date LIKE '{year}%'
+                    WHERE dep_date::text LIKE :year
                     GROUP BY region
                     ORDER BY flight_count DESC LIMIT 10;
                 """
+                params = {'year': f"{year}%"}
             with engine.connect() as conn:
-                metrics_df = pd.read_sql(query, conn)
+                metrics_df = pd.read_sql(text(query), conn, params=params)
             if metrics_df.empty:
                 return jsonify({"error": "No data for graph"}), 404
             plt.figure(figsize=(10, 6))
@@ -374,10 +393,18 @@ def get_graph():
                 GROUP BY dep_date
                 ORDER BY dep_date;
             """
+            params = {}
             if year:
-                query = query.replace("FROM flights", f"FROM flights WHERE dep_date LIKE '{year}%'")
+                query = """
+                    SELECT dep_date, COUNT(flight_id) as flight_count
+                    FROM flights
+                    WHERE dep_date::text LIKE :year
+                    GROUP BY dep_date
+                    ORDER BY dep_date;
+                """
+                params = {'year': f"{year}%"}
             with engine.connect() as conn:
-                ts_df = pd.read_sql(query, conn)
+                ts_df = pd.read_sql(text(query), conn, params=params)
             if ts_df.empty:
                 return jsonify({"error": "No data for time series"}), 404
             plt.figure(figsize=(12, 6))
@@ -498,15 +525,18 @@ def export_report():
             "flights": flights_df.to_dict(orient='records'),
             "metrics": metrics_df.to_dict(orient='records')
         }
-        response = jsonify(report)
+        # Фикс escaping: Используем json.dumps с ensure_ascii=False для чистого UTF-8
+        json_content = json.dumps(report, ensure_ascii=False, indent=4)
+        response = make_response(json_content)
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
         response.headers['Content-Disposition'] = 'attachment; filename=full_report.json'
         return response
     except Exception as e:
         app.logger.error(f"Error in export: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
+
 if __name__ == '__main__':
-    # Создать таблицы
+    # Создать таблицы (теперь здесь, после wait_for_db)
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS flights (

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aeromap-backend
+  namespace: aeromap
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aeromap-backend
+  template:
+    metadata:
+      labels:
+        app: aeromap-backend
+    spec:
+      containers:
+      - name: backend
+        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-backend:0.2
+        ports:
+        - containerPort: 5000
+        env:
+        - name: DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: aeromap-db-secret
+              key: DATABASE_URL
+        
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-svc
+  namespace: aeromap
+spec:
+  selector:
+    app: aeromap-backend
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: ClusterIP

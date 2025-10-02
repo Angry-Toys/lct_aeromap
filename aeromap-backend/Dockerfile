@@ -20,8 +20,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 COPY shapefiles/ shapefiles/
 
+# Копируем wait script
+COPY wait_for_db.sh .
+
+RUN chmod +x wait_for_db.sh
+
 # Expose port
 EXPOSE 5000
 
-# Запуск
-CMD ["python", "api.py"]
+# Запуск с wait
+CMD ["./wait_for_db.sh", "python", "api.py"]
