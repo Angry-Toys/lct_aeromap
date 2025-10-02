@@ -42,13 +42,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup kubectl
-      run: |
-        echo "${{ secrets.KUBECONFIG }}" > kubeconfig
-        export KUBECONFIG=$PWD/kubeconfig
-        kubectl version --client
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v4
+      with:
+        version: 'v1.34.1'
+
+    - name: Set Kubernetes context
+      uses: azure/k8s-set-context@v3
+      with:
+        kubeconfig: ${{ secrets.KUBECONFIG }}
 
     - name: Update Deployments
       run: |
         kubectl -n aeromap set image deployment/backend backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
         kubectl -n aeromap set image deployment/frontend frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
+        # Опционально: kubectl rollout status deployment/backend -n aeromap --timeout=5m  # Для проверки rollout
