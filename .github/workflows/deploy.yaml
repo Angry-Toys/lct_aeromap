@@ -63,7 +63,7 @@ jobs:
       env:
         KUBECONFIG: ./kubeconfig.yaml
       run: |
-        kubectl -n aeromap set image deployment/aeromap-backend aeromap-backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} --kubeconfig kubeconfig.yaml
-        kubectl -n aeromap set image deployment/aeromap-frontend aeromap-frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} --kubeconfig kubeconfig.yaml
+        kubectl -n aeromap set image deployment/aeromap-backend backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} --kubeconfig kubeconfig.yaml
+        kubectl -n aeromap set image deployment/aeromap-frontend frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} --kubeconfig kubeconfig.yaml
         kubectl rollout status deployment/aeromap-backend -n aeromap --timeout=5m --kubeconfig kubeconfig.yaml
         kubectl rollout status deployment/aeromap-frontend -n aeromap --timeout=5m --kubeconfig kubeconfig.yaml
