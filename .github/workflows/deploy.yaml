@@ -3,7 +3,7 @@ name: Build & Deploy to Yandex K8s
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # кнопка "Run workflow" вручную
+  workflow_dispatch:
 
 jobs:
   build-and-push:
@@ -42,18 +42,53 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Install AWS CLI
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y awscli
+        aws --version
+
     - name: Set up kubectl
       uses: azure/setup-kubectl@v4
       with:
         version: 'v1.34.1'
 
-    - name: Set Kubernetes context
-      uses: azure/k8s-set-context@v3
-      with:
-        kubeconfig: ${{ secrets.KUBECONFIG }}
+    - name: Generate kubeconfig
+      env:
+        ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY_ID }}
+        SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_ACCESS_KEY }}
+      run: |
+        # Генерируем IAM-токен
+        IAM_TOKEN=$(aws iam create-access-token \
+          --endpoint-url https://iam.api.cloud.yandex.net \
+          --access-key $ACCESS_KEY_ID \
+          --secret-key $SECRET_ACCESS_KEY | jq -r '.iamToken')
+        
+        # Создаём kubeconfig
+        cat > kubeconfig.yaml << EOF
+        apiVersion: v1
+        clusters:
+        - cluster:
+            certificate-authority-data: ${{ secrets.YC_K8S_CA }}
+            server: ${{ secrets.YC_K8S_ENDPOINT }}
+          name: aeromap-cluster
+        contexts:
+        - context:
+            cluster: aeromap-cluster
+            user: ci-cd-user
+          name: aeromap-cluster
+        current-context: aeromap-cluster
+        kind: Config
+        users:
+        - name: ci-cd-user
+          user:
+            token: $IAM_TOKEN
+        EOF
+        export KUBECONFIG=$PWD/kubeconfig.yaml
 
     - name: Update Deployments
       run: |
         kubectl -n aeromap set image deployment/backend backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
         kubectl -n aeromap set image deployment/frontend frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
-        # Опционально: kubectl rollout status deployment/backend -n aeromap --timeout=5m  # Для проверки rollout
+        kubectl rollout status deployment/backend -n aeromap --timeout=5m
+        kubectl rollout status deployment/frontend -n aeromap --timeout=5m
