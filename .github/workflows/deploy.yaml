@@ -18,10 +18,10 @@ jobs:
 
     - name: Configure Yandex Cloud
       run: |
-        echo '${{ secrets.YC_SA_KEY }}' > sa-key.json
+        echo "${{ secrets.YC_SA_KEY }}" > sa-key.json
         yc config set service-account-key sa-key.json
-        yc config set cloud-id <YOUR_CLOUD_ID>
-        yc config set folder-id <YOUR_FOLDER_ID>
+        yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
+        yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
 
     - name: Auth to Container Registry
       run: yc container registry configure-docker
