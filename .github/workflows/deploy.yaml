@@ -1,0 +1,54 @@
+name: Build & Deploy to Yandex K8s
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # кнопка "Run workflow" вручную
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Yandex CLI
+      run: |
+        curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+        echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH
+
+    - name: Configure Yandex Cloud
+      run: |
+        echo '${{ secrets.YC_SA_KEY }}' > sa-key.json
+        yc config set service-account-key sa-key.json
+        yc config set cloud-id <YOUR_CLOUD_ID>
+        yc config set folder-id <YOUR_FOLDER_ID>
+
+    - name: Auth to Container Registry
+      run: yc container registry configure-docker
+
+    - name: Build & Push Backend
+      run: |
+        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }} ./backend
+        docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
+
+    - name: Build & Push Frontend
+      run: |
+        docker build -t cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }} ./frontend
+        docker push cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      run: |
+        echo "${{ secrets.KUBECONFIG }}" > kubeconfig
+        export KUBECONFIG=$PWD/kubeconfig
+        kubectl version --client
+
+    - name: Update Deployments
+      run: |
+        kubectl -n aeromap set image deployment/backend backend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-backend:${{ github.sha }}
+        kubectl -n aeromap set image deployment/frontend frontend=cr.yandex/${{ secrets.YC_REG_ID }}/aeromap-frontend:${{ github.sha }}
