@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aeromap-frontend
+  namespace: aeromap
 spec:
   replicas: 1
   selector:
@@ -22,9 +23,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend-svc
+  namespace: aeromap
 spec:
   selector:
-    app: frontend
+    app: aeromap-frontend
   ports:
   - port: 80
     targetPort: 80

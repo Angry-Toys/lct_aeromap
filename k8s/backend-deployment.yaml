@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-backend:0.1
+        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-backend:0.2
         ports:
         - containerPort: 5000
         env:
@@ -29,7 +29,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: aeromap-svc
+  name: backend-svc
   namespace: aeromap
 spec:
   selector:
