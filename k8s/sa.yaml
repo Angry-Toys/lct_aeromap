@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-cd-sa  
+  namespace: aeromap  
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ci-cd-sa-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin  # Полные права; для read-only — 'view', для deploy — 'edit'
+subjects:
+- kind: ServiceAccount
+  name: ci-cd-sa
+  namespace: aeromap

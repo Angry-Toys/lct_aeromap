@@ -3,8 +3,14 @@ kind: Ingress
 metadata:
   name: aeromap-ingress
   namespace: aeromap
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"  # Редирект HTTP → HTTPS
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - 84.201.181.11.nip.io
+    secretName: aeromap-tls  # Secret с вашим сертификатом
   rules:
   - host: 84.201.181.11.nip.io
     http:
