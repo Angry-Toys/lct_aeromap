@@ -1,0 +1,56 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "БПЛА Анализ API",
+    "description": "Сервис для анализа полетов БПЛА по регионам РФ",
+    "version": "1.0"
+  },
+  "paths": {
+    "/metrics": {
+      "get": {
+        "summary": "Получить метрики по регионам (с опциональным фильтром по году)",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "description": "Год для фильтра (e.g., 2025)",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {"description": "JSON с метриками по регионам"}
+        }
+      }
+    },
+    "/report/graph": {
+      "get": {
+        "summary": "Получить график в PNG/JPEG (топ регионов)",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "description": "Год для фильтра",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Формат: png или jpeg",
+            "schema": {"type": "string", "default": "png"}
+          }
+        ],
+        "responses": {
+          "200": {"description": "График в PNG/JPEG"}
+        }
+      }
+    },
+    "/upload": {
+      "post": {
+        "summary": "Загрузка новых данных (Excel)",
+        "responses": {
+          "200": {"description": "Данные загружены"}
+        }
+      }
+    }
+  }
+}
