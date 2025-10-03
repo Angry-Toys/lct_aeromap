@@ -57,8 +57,11 @@
   margin: 0;
   font-weight: normal;
 }
-
+html {
+  height: 100%;
+}
 body {
+  height: 100vh;
   min-height: 100vh;
   color: var(--color-text);
   background: var(--color-background);

@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-frontend:0.2
+        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-frontend:latest
         ports:
         - containerPort: 80
 ---

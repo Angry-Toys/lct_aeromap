@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-backend:0.2
+        image: cr.yandex/crp4pd0a4o1b86l5creg/aeromap-backend:latest
         ports:
         - containerPort: 5000
         env:
