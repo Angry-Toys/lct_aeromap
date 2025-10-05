@@ -435,15 +435,27 @@ def upload_data():
         file = request.files['file']
         if not file.filename.endswith('.xlsx'):
             return jsonify({"error": "Only XLSX files supported"}), 400
-        df_excel = pd.read_excel(file, sheet_name='Result_1', header=None)
-        if df_excel.shape[1] > 1:
-            rows = df_excel.apply(lambda x: ' '.join(x.fillna('').astype(str).str.strip().str.replace('nan', '').str.replace('NaN', '')), axis=1).tolist()
-            rows = [re.sub(r'\s+', ' ', r).strip() for r in rows if r.strip()]
-        else:
-            rows = df_excel[0].fillna('').astype(str).str.strip().tolist()
-            rows = [r for r in rows if r]
+        excel_data = pd.read_excel(file, sheet_name=None, header=None) 
+        if not excel_data:
+            return jsonify({"error": "No sheets found in file"}), 400
+        
+        all_rows = []  
+        for sheet, df_excel in excel_data.items():
+            if df_excel.empty:
+                continue 
+            if df_excel.shape[1] > 1:
+                rows = df_excel.apply(lambda x: ' '.join(x.fillna('').astype(str).str.strip().str.replace('nan', '').str.replace('NaN', '')), axis=1).tolist()
+                rows = [re.sub(r'\s+', ' ', r).strip() for r in rows if r.strip()]
+            else:
+                rows = df_excel[0].fillna('').astype(str).str.strip().tolist()
+                rows = [r for r in rows if r]
+            all_rows.extend(rows) 
+        
+        if not all_rows:
+            return jsonify({"error": "No valid data in any sheet"}), 400
+        
         with Pool(processes=4) as pool:
-            parsed_flights = pool.map(parse_flight_row, rows)
+            parsed_flights = pool.map(parse_flight_row, all_rows)
         parsed_flights = [p for p in parsed_flights if p]
         if not parsed_flights:
             return jsonify({"error": "No valid flights parsed"}), 400
