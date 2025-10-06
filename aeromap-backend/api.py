@@ -39,7 +39,7 @@ API_URL = '/static/swagger.json'
 swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "БПЛА Анализ"})
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
-# Функции парсинга (без изменений)
+# Функции парсинга
 def parse_coords(coord_str):
     if not coord_str:
         return None, None
@@ -224,7 +224,6 @@ def get_region(lat, lon, gdf):
     app.logger.warning(f"No region found for {lat}, {lon}")
     return 'Unknown'
 
-# Новый эндпоинт для /api/regions/flights (без изменений)
 @app.route('/api/regions/flights', methods=['GET'])
 def get_regions_flights():
     try:
@@ -291,7 +290,6 @@ def get_metrics():
             df = pd.read_sql(text(base_query), conn, params=params)
         if df.empty:
             return jsonify({"error": "No metrics available"}), 404
-        # Рассчитай метрики в Pandas (проще и стабильнее)
         metrics_df = df.groupby('region').agg(
             flight_count=('flight_id', 'count'),
             avg_duration_min=('duration_min', 'mean'),
@@ -299,7 +297,7 @@ def get_metrics():
             area_km2=('area_km2', 'max')
         ).reset_index()
         metrics_df['flight_density'] = metrics_df['flight_count'] / metrics_df['area_km2']
-        # Peak hourly (groupby hour from dep_time)
+        # Peak hourly
         df['dep_datetime'] = pd.to_datetime(df['dep_date'].astype(str) + ' ' + df['dep_time'].astype(str))
         df['hour'] = df['dep_datetime'].dt.floor('H')
         metrics_df['peak_load_hourly'] = df.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
@@ -308,7 +306,7 @@ def get_metrics():
         metrics_df = metrics_df.merge(daily_counts.groupby('region')['daily_count'].agg(['mean', 'median']).reset_index(), on='region')
         metrics_df = metrics_df.rename(columns={'mean': 'avg_daily_flights', 'median': 'median_daily_flights'})
         metrics_df = metrics_df.sort_values(by='flight_count', ascending=False)
-        # Growth (separate conn)
+        # Growth
         if month:
             prev_month = int(month) - 1 if int(month) > 1 else 12
             prev_year = year if prev_month != 12 else str(int(year) - 1)
@@ -325,12 +323,10 @@ def get_metrics():
                 prev_counts = prev_df.groupby('region')['flight_id'].count().reset_index(name='flight_count_prev')
                 metrics_df = metrics_df.merge(prev_counts, on='region', how='left')
                 metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev'].fillna(0)) / metrics_df['flight_count_prev'].fillna(1)) * 100
-        # Hourly distribution (separate, with fix for NaN)
         hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights WHERE dep_time IS NOT NULL GROUP BY hour;"
         with engine.connect() as conn:
             hourly_df = pd.read_sql(hourly_query, conn)
         metrics_df['hourly_distribution'] = [hourly_df.to_dict(orient='records')] * len(metrics_df)
-        # Zero days (fixed for empty)
         zero_days_query = """
             SELECT m.region, COUNT(*) as zero_days
             FROM metrics m
@@ -361,7 +357,7 @@ def get_metrics():
 def get_graph():
     try:
         year = request.args.get('year')
-        type_graph = request.args.get('type', 'top_regions')  # Новый параметр для типа графика
+        type_graph = request.args.get('type', 'top_regions') 
         format_type = request.args.get('format', 'png')
         if type_graph == 'top_regions':
             query = "SELECT region, flight_count FROM metrics ORDER BY flight_count DESC LIMIT 10;"
@@ -467,7 +463,6 @@ def upload_data():
         df['region'] = df.apply(lambda row: get_region(row['dep_lat'], row['dep_lon'], gdf), axis=1)
         df['dep_geom'] = df.apply(lambda row: f"SRID=4326;POINT({row['dep_lon']} {row['dep_lat']})" if pd.notna(row['dep_lat']) else None, axis=1)
         df.to_sql('flights', engine, if_exists='append', index=False, method='multi', dtype={'dep_geom': Geometry('POINT', srid=4326)})
-        # Пересчет метрик (расширенные)
         metrics = df.groupby('region').agg({
             'flight_id': 'count',
             'duration_min': ['mean', 'sum']
@@ -490,14 +485,11 @@ def webhook():
         data = request.json
         if not data or 'flights' not in data:
             return jsonify({"error": "Invalid payload"}), 400
-        # Предполагаем, что payload - JSON с массивом raw строк полетов
         rows = data['flights']
         with Pool(processes=4) as pool:
             parsed_flights = pool.map(parse_flight_row, rows)
         parsed_flights = [p for p in parsed_flights if p]
         df = pd.DataFrame(parsed_flights).drop_duplicates(subset=['flight_id', 'dep_date'])
-        # ... (аналогично upload: геопривязка, сохранение, метрики)
-        # Для простоты, повтор кода из upload, но в prod рефакторить в функцию
         with Env(SHAPE_RESTORE_SHX='YES'):
             gdf = gpd.read_file(SHAPEFILE_PATH)
         if gdf.crs != 'EPSG:4326':
@@ -505,7 +497,6 @@ def webhook():
         df['region'] = df.apply(lambda row: get_region(row['dep_lat'], row['dep_lon'], gdf), axis=1)
         df['dep_geom'] = df.apply(lambda row: f"SRID=4326;POINT({row['dep_lon']} {row['dep_lat']})" if pd.notna(row['dep_lat']) else None, axis=1)
         df.to_sql('flights', engine, if_exists='append', index=False, method='multi', dtype={'dep_geom': Geometry('POINT', srid=4326)})
-        # Пересчет метрик (как выше)
         metrics = df.groupby('region').agg({
             'flight_id': 'count',
             'duration_min': ['mean', 'sum']
@@ -537,7 +528,6 @@ def export_report():
             "flights": flights_df.to_dict(orient='records'),
             "metrics": metrics_df.to_dict(orient='records')
         }
-        # Фикс escaping: Используем json.dumps с ensure_ascii=False для чистого UTF-8
         json_content = json.dumps(report, ensure_ascii=False, indent=4)
         response = make_response(json_content)
         response.headers['Content-Type'] = 'application/json; charset=utf-8'
@@ -548,7 +538,6 @@ def export_report():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Создать таблицы (теперь здесь, после wait_for_db)
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS flights (
@@ -580,3 +569,4 @@ if __name__ == '__main__':
         """))
         conn.commit()
     app.run(debug=True, host='0.0.0.0', port=5000)
+
