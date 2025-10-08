@@ -18,7 +18,7 @@
         </div>
         <div class="region-info">
           <p class="label">Выбранный регион</p>
-          <h2 class="region-name">Russian Federation</h2>
+          <h2 class="region-name">{{ selectedRegion || 'Russian Federation' }}</h2>
         </div>
       </div>
       <div class="date-group">
@@ -32,7 +32,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-// Интерфейс Filters, упрощенный под текущие данные
+// Интерфейс Filters
 interface Filters {
   from?: string | null;
   to?: string | null;
@@ -41,19 +41,18 @@ interface Filters {
 
 const props = defineProps<{
   filters: Filters;
+  selectedRegion?: string;
 }>();
 
 // Форматирование дат в русский читаемый вид
 const formattedDate = computed(() => {
-  console.log('Current filters in formattedDate:', props.filters); // Для отладки
+  console.log('Current filters in formattedDate:', props.filters);
   const from = props.filters.from || '2025-01-01';
   const to = props.filters.to || '2025-12-31';
 
-  // Парсим даты
   const fromDate = new Date(from);
   const toDate = new Date(to);
 
-  // Форматируем в "день месяц год"
   const fromFormatted = fromDate.toLocaleDateString('ru-RU', {
     day: 'numeric',
     month: 'long',

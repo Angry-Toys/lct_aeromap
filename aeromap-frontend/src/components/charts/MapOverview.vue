@@ -18,6 +18,7 @@
       :option="option"
       :autoresize="true"
       class="map-container"
+      @click="handleChartClick"
     />
 
     <div v-else class="status-overlay">
@@ -48,86 +49,93 @@ echarts.use([
 ]);
 
 // --- Состояния компонента ---
-const isLoading = ref(false); // Для индикации загрузки именно ДАННЫХ, а не карты
-const isMapReady = ref(false); // Флаг, что GeoJSON загружен и карта готова к отображению
+const isLoading = ref(false);
+const isMapReady = ref(false);
 const errorMessage = ref('');
 const chartRef = ref<InstanceType<typeof VChart> | null>(null);
 const option = ref({});
 
+const props = defineProps<{
+  filters: { from?: string | null; to?: string | null; metric?: 'count' | 'avg_duration' };
+}>();
+
+const emit = defineEmits(['region-selected']);
+
 // --- Базовая опция для карты (пустое состояние) ---
 const getBaseMapOption = (mapName: string) => ({
-  title: {
-    text: 'Карта Активности Полётов',
-    subtext: 'Ожидание данных...',
-    left: 'center',
-    textStyle: { color: '#e0e0e0' }, // Светлый заголовок
-    subtextStyle: { color: '#aaaaaa' } // Нейтральный подзаголовок
-  },
-  geo: { // Используем geo для более гибкого управления слоями
+  geo: {
     map: mapName,
     roam: true,
     zoom: 1.2,
     center: [95, 65],
     itemStyle: {
-      areaColor: '#1a1a1a', // ФОН: Темно-серый (вместо #1d3a5e)
-      borderColor: '#333333', // ГРАНИЦЫ: Темно-серые (вместо #4270a1)
+      areaColor: '#1a1a1a',
+      borderColor: '#333333',
       borderWidth: 1,
     },
     emphasis: {
       itemStyle: {
-        areaColor: '#333333', // ПРИ НАВЕДЕНИИ: Темно-серый (вместо #30ceda)
+        areaColor: '#333333',
       },
       label: {
         show: false
       }
     }
   },
-  // Новый стиль для Tooltip
   tooltip: {
-      trigger: 'item',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)', // Темный фон
-      textStyle: { color: '#ffc107' }, // Янтарный текст
-      formatter: '{b}: <strong>{c}</strong> полетов'
+    trigger: 'item',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    textStyle: { color: '#ffc107' },
+    formatter: '{b}: <strong>{c}</strong> полетов'
   },
-  series: [] // Серии данных изначально пусты
+  series: []
 });
 
+// --- Обработчик клика по карте ---
+const handleChartClick = (params: any) => {
+  if (params.name && params.seriesType === 'map') {
+    emit('region-selected', params.name);
+    console.log('Region selected:', params.name);
+  }
+};
 
-// --- Функция №1: Инициализация карты --- (ЛОГИКА НЕ ИЗМЕНЕНА)
+// --- Функция №1: Инициализация карты ---
 const initMap = async () => {
   try {
     const geoResponse = await axios.get('/maps/Russia.geojson');
+    console.log('GeoJSON loaded:', geoResponse.data);
     echarts.registerMap('Russia', geoResponse.data);
 
     option.value = getBaseMapOption('Russia');
     isMapReady.value = true;
 
     await fetchFlightData();
-
   } catch (error) {
-    console.error("Критическая ошибка: не удалось загрузить GeoJSON карты.", error);
-    errorMessage.value = "Не удалось загрузить файл карты. Проверьте путь и доступность файла.";
+    console.error('Критическая ошибка: не удалось загрузить GeoJSON карты.', error);
+    errorMessage.value = 'Не удалось загрузить файл карты. Проверьте путь и доступность файла.';
   }
 };
 
-// --- Функция №2: Загрузка и обновление данных о полётов --- (ТОЛЬКО СТИЛИЗАЦИЯ)
+// --- Функция №2: Загрузка данных о полётах ---
 const fetchFlightData = async () => {
   isLoading.value = true;
-  errorMessage.value = '';
-
   try {
-    const response = await axios.get('http://localhost:5000/api/regions/flights');
+    const response = await axios.get('http://localhost:5000/api/regions/flights', {
+      params: {
+        from: props.filters.from || '2025-01-01',
+        to: props.filters.to || '2025-12-31',
+        metric: props.filters.metric || 'count',
+      }
+    });
+
     const flightData = response.data;
+    console.log('Flight data received:', flightData);
 
     if (chartRef.value) {
       if (flightData && flightData.length > 0) {
-        const maxValue = Math.max(...flightData.map((item: {value: number}) => item.value));
+        const maxValue = Math.max(...flightData.map((item: { value: number }) => item.value));
 
         chartRef.value.setOption({
-          title: {
-            subtext: 'Данные успешно загружены'
-          },
-          // Переопределяем Tooltip для корректного отображения
           tooltip: {
             trigger: 'item',
             backgroundColor: 'rgba(0, 0, 0, 0.8)',
@@ -141,10 +149,10 @@ const fetchFlightData = async () => {
             top: 'bottom',
             text: ['Макс.', 'Мин.'],
             inRange: {
-              color: ['#1a1a1a', '#ffc107'] // ГРАДИЕНТ: От темно-серого до янтарного (вместо синего)
+              color: ['#1a1a1a', '#ffc107']
             },
             calculable: true,
-            textStyle: { color: '#e0e0e0' } // Светлый текст
+            textStyle: { color: '#e0e0e0' }
           },
           series: [{
             name: 'Активность полетов',
@@ -158,14 +166,14 @@ const fetchFlightData = async () => {
       }
     }
   } catch (error: any) {
-    errorMessage.value = error.response?.data?.error || "Неизвестная ошибка API.";
-    console.error("Ошибка при загрузке данных о полётах:", error);
+    errorMessage.value = error.response?.data?.error || 'Неизвестная ошибка API.';
+    console.error('Ошибка при загрузке данных о полётах:', error);
   } finally {
     isLoading.value = false;
   }
 };
 
-// --- Хук жизненного цикла --- (ЛОГИКА НЕ ИЗМЕНЕНА)
+// --- Хук жизненного цикла ---
 onMounted(() => {
   initMap();
 });

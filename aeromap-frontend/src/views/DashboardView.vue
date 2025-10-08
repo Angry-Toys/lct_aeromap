@@ -4,9 +4,8 @@
 
     <main class="dashboard-content">
       <DashboardFilters @filters-updated="handleFiltersUpdate" />
-      <SelectedParams :filters="activeFilters" />
+      <SelectedParams :filters="activeFilters" :selectedRegion="selectedRegion" />
 
-      <!-- Новый контейнер для горизонтальных карточек метрик -->
       <div class="metrics-row">
         <MetricCard title="Всего полётов" :value="metrics.totalFlights" :is-loading="isLoadingMetrics" />
         <MetricCard title="Средняя длит." :value="metrics.avgDuration" :is-loading="isLoadingMetrics" unit="мин." />
@@ -18,7 +17,11 @@
 
       <div class="dashboard-grid">
         <div class="main-column">
-          <MapOverview :key="componentKey" :filters="activeFilters" />
+          <MapOverview
+            :key="componentKey"
+            :filters="activeFilters"
+            @region-selected="handleRegionSelected"
+          />
           <div class="charts-row">
             <TopRegionsChart :key="componentKey + 1" :filters="activeFilters" />
             <HourlyActivityChart :data="metrics.hourlyDistribution" :is-loading="isLoadingMetrics" />
@@ -72,6 +75,13 @@ interface Filters {
 const isModalVisible = ref(false);
 const isLoadingMetrics = ref(true);
 const componentKey = ref(0);
+const selectedRegion = ref<string>('Russian Federation');
+
+
+const handleRegionSelected = (region: string) => {
+  console.log('Region selected:', region);
+  selectedRegion.value = region;
+};
 
 // Единый объект с фильтрами
 const activeFilters = ref<Filters>({
@@ -101,8 +111,8 @@ const fetchDataForSidebar = async () => {
   try {
     const response = await axios.get('http://localhost:5000/metrics', {
       params: {
-        year: activeFilters.value.from?.split('-')[0],
-        month: activeFilters.value.from?.split('-')[1],
+        year: activeFilters.value.from?.split('-')[0] || '2025',
+        month: activeFilters.value.from?.split('-')[1] || '01',
       },
     });
 
@@ -120,6 +130,7 @@ const fetchDataForSidebar = async () => {
           acc.peakLoad = Math.max(acc.peakLoad, region.peak_load || 0);
           acc.growthPercentList.push(region.growth_percent || 0);
           acc.flightDensityList.push(region.flight_density || 0);
+          acc.zeroDays += region.zero_days || 0;
           return acc;
         },
         {
@@ -137,28 +148,23 @@ const fetchDataForSidebar = async () => {
         ? parseFloat((totals.totalDuration / totals.totalFlights).toFixed(1))
         : 0;
       metrics.peakLoad = totals.peakLoad;
-      metrics.zeroDays = regionsData.reduce(
-        (acc: number, region: any) => acc + (region.zero_days || 0),
-        0
-      );
-      metrics.growthPercent =
-        totals.growthPercentList.length > 0
-          ? parseFloat(
-              (
-                totals.growthPercentList.reduce((a: number, b: number) => a + b, 0) /
-                totals.growthPercentList.length
-              ).toFixed(1)
-            )
-          : 0;
-      metrics.flightDensity =
-        totals.flightDensityList.length > 0
-          ? parseFloat(
-              (
-                totals.flightDensityList.reduce((a: number, b: number) => a + b, 0) /
-                totals.flightDensityList.length
-              ).toFixed(2)
-            )
-          : 0;
+      metrics.zeroDays = totals.zeroDays;
+      metrics.growthPercent = totals.growthPercentList.length
+        ? parseFloat(
+            (
+              totals.growthPercentList.reduce((a: number, b: number) => a + b, 0) /
+              totals.growthPercentList.length
+            ).toFixed(1)
+          )
+        : 0;
+      metrics.flightDensity = totals.flightDensityList.length
+        ? parseFloat(
+            (
+              totals.flightDensityList.reduce((a: number, b: number) => a + b, 0) /
+              totals.flightDensityList.length
+            ).toFixed(2)
+          )
+        : 0;
       metrics.hourlyDistribution = regionsData[0].hourly_distribution || null;
     }
   } catch (error) {
@@ -228,6 +234,8 @@ const handleFiltersUpdate = (filters: Filters) => {
   componentKey.value++;
 };
 
+
+
 // --- ХУК ЖИЗНЕННОГО ЦИКЛА ---
 onMounted(fetchDataForSidebar);
 </script>
@@ -253,7 +261,7 @@ onMounted(fetchDataForSidebar);
 .dashboard-grid {
   flex: 1;
   display: grid;
-  gap: 32px; /* Увеличено с 24px до 32px для большего отступа от метрик */
+  gap: 32px;
   grid-template-columns: 1fr;
 }
 
@@ -276,23 +284,20 @@ onMounted(fetchDataForSidebar);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
-  animation: fadeIn 0.3s ease-in; /* Добавлена анимация */
+  animation: fadeIn 0.3s ease-in;
 }
 
-/* Стили для MetricCard */
 :deep(.metric-card) {
   flex: 1;
   min-width: 200px;
   box-sizing: border-box;
 }
 
-/* Анимация появления */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Адаптивность */
 @media (max-width: 1200px) {
   .metrics-row {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
