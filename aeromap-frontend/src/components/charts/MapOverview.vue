@@ -60,8 +60,8 @@ const getBaseMapOption = (mapName: string) => ({
     text: 'Карта Активности Полётов',
     subtext: 'Ожидание данных...',
     left: 'center',
-    textStyle: { color: '#e0e0e0' },
-    subtextStyle: { color: '#888' }
+    textStyle: { color: '#e0e0e0' }, // Светлый заголовок
+    subtextStyle: { color: '#aaaaaa' } // Нейтральный подзаголовок
   },
   geo: { // Используем geo для более гибкого управления слоями
     map: mapName,
@@ -69,24 +69,31 @@ const getBaseMapOption = (mapName: string) => ({
     zoom: 1.2,
     center: [95, 65],
     itemStyle: {
-      areaColor: '#1d3a5e', // Нейтральный цвет регионов без данных
-      borderColor: '#4270a1',
+      areaColor: '#1a1a1a', // ФОН: Темно-серый (вместо #1d3a5e)
+      borderColor: '#333333', // ГРАНИЦЫ: Темно-серые (вместо #4270a1)
       borderWidth: 1,
     },
     emphasis: {
       itemStyle: {
-        areaColor: '#30ceda', // Цвет при наведении
+        areaColor: '#333333', // ПРИ НАВЕДЕНИИ: Темно-серый (вместо #30ceda)
       },
       label: {
         show: false
       }
     }
   },
+  // Новый стиль для Tooltip
+  tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(0, 0, 0, 0.8)', // Темный фон
+      textStyle: { color: '#ffc107' }, // Янтарный текст
+      formatter: '{b}: <strong>{c}</strong> полетов'
+  },
   series: [] // Серии данных изначально пусты
 });
 
 
-// --- Функция №1: Инициализация карты ---
+// --- Функция №1: Инициализация карты --- (ЛОГИКА НЕ ИЗМЕНЕНА)
 const initMap = async () => {
   try {
     const geoResponse = await axios.get('/maps/Russia.geojson');
@@ -95,7 +102,6 @@ const initMap = async () => {
     option.value = getBaseMapOption('Russia');
     isMapReady.value = true;
 
-    // Сразу после инициализации карты запрашиваем данные о полётах
     await fetchFlightData();
 
   } catch (error) {
@@ -104,7 +110,7 @@ const initMap = async () => {
   }
 };
 
-// --- Функция №2: Загрузка и обновление данных о полётах ---
+// --- Функция №2: Загрузка и обновление данных о полётов --- (ТОЛЬКО СТИЛИЗАЦИЯ)
 const fetchFlightData = async () => {
   isLoading.value = true;
   errorMessage.value = '';
@@ -113,18 +119,19 @@ const fetchFlightData = async () => {
     const response = await axios.get('http://localhost:5000/api/regions/flights');
     const flightData = response.data;
 
-    // Обновляем ECharts только если он уже инициализирован
     if (chartRef.value) {
       if (flightData && flightData.length > 0) {
-        // Данные есть - обновляем опции для отображения
         const maxValue = Math.max(...flightData.map((item: {value: number}) => item.value));
 
         chartRef.value.setOption({
           title: {
-            subtext: 'Данные успешно загружены' // Меняем подзаголовок
+            subtext: 'Данные успешно загружены'
           },
+          // Переопределяем Tooltip для корректного отображения
           tooltip: {
             trigger: 'item',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            textStyle: { color: '#ffc107' },
             formatter: '{b}: <strong>{c}</strong> полетов'
           },
           visualMap: {
@@ -134,20 +141,19 @@ const fetchFlightData = async () => {
             top: 'bottom',
             text: ['Макс.', 'Мин.'],
             inRange: {
-              color: ['#30ceda', '#226bcb', '#0e4a91']
+              color: ['#1a1a1a', '#ffc107'] // ГРАДИЕНТ: От темно-серого до янтарного (вместо синего)
             },
             calculable: true,
-            textStyle: { color: '#ccc' }
+            textStyle: { color: '#e0e0e0' } // Светлый текст
           },
           series: [{
             name: 'Активность полетов',
             type: 'map',
-            geoIndex: 0, // Привязываем серию к geo-компоненту
+            geoIndex: 0,
             data: flightData
           }]
         });
       } else {
-        // Данных нет - возвращаем карту в базовое состояние
         chartRef.value.setOption(getBaseMapOption('Russia'));
       }
     }
@@ -159,7 +165,7 @@ const fetchFlightData = async () => {
   }
 };
 
-// --- Хук жизненного цикла ---
+// --- Хук жизненного цикла --- (ЛОГИКА НЕ ИЗМЕНЕНА)
 onMounted(() => {
   initMap();
 });
@@ -167,11 +173,11 @@ onMounted(() => {
 
 <style scoped>
 .chart-wrapper {
-  width: 80vw;
+  width: 100%; /* Полная ширина */
   height: 80vh;
   position: relative;
-  background-color: #0a1929;
-  border: 1px solid #226bcb;
+  background-color: #000000;
+  border: 1px solid #333333;
   border-radius: 12px;
   overflow: hidden;
   display: flex;
@@ -181,7 +187,7 @@ onMounted(() => {
 }
 
 .map-container {
-  width: 100%;
+  width: 100%; /* Полная ширина */
   height: 100%;
 }
 
@@ -192,7 +198,7 @@ onMounted(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(10, 25, 41, 0.7);
+  background-color: rgba(0, 0, 0, 0.9);
   backdrop-filter: blur(5px);
   display: flex;
   flex-direction: column;
@@ -207,34 +213,34 @@ onMounted(() => {
 }
 
 .status-overlay.error {
-  color: #ff8e8e;
+  color: #ff6666;
 }
 
 .error-details {
   font-size: 0.9rem;
-  color: #a0a0a0;
+  color: #aaaaaa;
   margin-top: 8px;
 }
 
 .status-overlay button {
   margin-top: 20px;
   padding: 10px 20px;
-  background-color: #30ceda;
+  background-color: #ffc107;
   border: none;
   border-radius: 5px;
-  color: #fff;
+  color: #000000;
   cursor: pointer;
   transition: background-color 0.2s;
 }
 
 .status-overlay button:hover {
-  background-color: #2ab8c5;
+  background-color: #ffac30;
 }
 
 /* Анимация спиннера */
 .spinner {
   border: 4px solid rgba(255, 255, 255, 0.2);
-  border-left-color: #30ceda;
+  border-left-color: #ffc107;
   border-radius: 50%;
   width: 40px;
   height: 40px;

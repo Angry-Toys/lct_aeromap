@@ -1,24 +1,31 @@
 <template>
   <div class="chart-container">
-    <v-chart v-if="!isLoading" :option="chartOption" autoresize />
-    <div v-if="isLoading" class="status-loading">Загрузка...</div>
-    <div v-if="error" class="status-loading">{{ error }}</div>
+    <div v-if="isLoading" class="status-loading">Загрузка данных по регионам...</div>
+    <div v-else-if="error" class="status-loading error">{{ error }}</div>
+    <v-chart v-else :option="chartOption" autoresize />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import VChart from 'vue-echarts';
 import axios from 'axios';
 import * as echarts from 'echarts/core';
 import { BarChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components';
+import { GridComponent, TooltipComponent, TitleComponent, VisualMapComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 
-echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, CanvasRenderer]);
+echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, VisualMapComponent, CanvasRenderer]);
+
+// Типизация для пропсов
+interface Filters {
+  year: string;
+  month: string | null;
+  metric: 'count' | 'avg_duration';
+}
 
 const props = defineProps<{
-  filters: { year: string; month: string | null };
+  filters: Filters;
 }>();
 
 const isLoading = ref(true);
@@ -29,68 +36,123 @@ const fetchData = async () => {
   isLoading.value = true;
   error.value = '';
   try {
-    // Используем правильный эндпоинт /api/regions/flights
+    // Форматирование дат для API /api/regions/flights
+    // Используем фильтр по году (игнорируем месяц, т.к. этот эндпоинт не поддерживает месяц)
+    const fromDate = `${props.filters.year}-01-01`;
+    const toDate = `${props.filters.year}-12-31`;
+
     const response = await axios.get('http://localhost:5000/api/regions/flights', {
       params: {
-        // Преобразуем фильтры в нужный формат from/to
-        from: `${props.filters.year}-01-01`,
-        to: `${props.filters.year}-12-31`,
-        metric: 'count'
+        from: fromDate,
+        to: toDate,
+        metric: props.filters.metric,
       }
     });
-    const data = response.data;
+
+    const data = response.data.slice(0, 10); // Берем топ-10
 
     if (!data || data.length === 0) {
-      error.value = 'Нет данных для отображения';
+      error.value = 'Нет данных для отображения рейтинга регионов';
+      chartOption.value = {};
       return;
     }
 
+    const titleText = props.filters.metric === 'count'
+      ? 'Топ 10 регионов по количеству полетов'
+      : 'Топ 10 регионов по средней длительности полетов (мин)';
+
     chartOption.value = {
-      title: { text: 'Топ регионов по активности', textStyle: { color: '#fff', fontWeight: 'normal' } },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'value', axisLine: { lineStyle: { color: '#888' } }, splitLine: { lineStyle: { color: '#2a3b5a' }} },
-      yAxis: { type: 'category', data: data.map((item: any) => item.name).reverse(), axisLine: { show: false }, axisTick: { show: false } },
+      title: {
+        text: titleText,
+        textStyle: {
+          color: '#e0e0e0',
+          fontWeight: 'normal',
+          fontSize: 16
+        },
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        textStyle: { color: '#fff' }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        top: '10%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'value',
+        axisLine: {
+          lineStyle: { color: '#aaaaaa' } // Серые оси
+        },
+        splitLine: {
+          lineStyle: { color: '#333333' } // Темно-серые фоновые линии
+        },
+        axisLabel: { color: '#aaaaaa' }
+      },
+      yAxis: {
+        type: 'category',
+        data: data.map((item: any) => item.name).reverse(),
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: { color: '#e0e0e0' } // Белые метки категорий
+      },
       series: [{
         type: 'bar',
+        name: props.filters.metric === 'count' ? 'Полетов' : 'Длительность, мин',
         data: data.map((item: any) => item.value).reverse(),
         itemStyle: {
+          // ЯНТАРНЫЙ ГРАДИЕНТ
           color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
-            { offset: 0, color: '#0e4a91' },
-            { offset: 1, color: '#30ceda' }
+            { offset: 0, color: '#ffac30' },
+            { offset: 1, color: '#ffc107' }
           ])
         },
-        barMaxWidth: 30
+        barMaxWidth: 20
       }]
     };
   } catch (e) {
-    error.value = 'Ошибка при загрузке данных';
+    error.value = 'Ошибка при загрузке данных рейтинга';
     console.error(e);
   } finally {
     isLoading.value = false;
   }
 };
 
-onMounted(fetchData);
+// Наблюдаем за изменением фильтров и перезагружаем данные
+watch(() => props.filters, fetchData, { deep: true, immediate: true });
 </script>
 
 <style scoped>
 .chart-container {
-  width: 100%;
-  height: 100%;
-  padding: 20px;
-  background: #0f2346;
-  border: 1px solid #226bcb;
+  /* Фон контейнера: Чистый чёрный */
+  background-color: #000000;
+  border: 1px solid #333333;
   border-radius: 12px;
+  padding: 16px;
+  height: 400px;
   position: relative;
-  min-height: 300px; /* Минимальная высота для предотвращения коллапса */
 }
 .status-loading {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  color: #a0c3ff;
+  color: #aaaaaa;
+  font-size: 1rem;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  z-index: 5;
+}
+.status-loading.error {
+    color: #ff6666;
 }
 </style>

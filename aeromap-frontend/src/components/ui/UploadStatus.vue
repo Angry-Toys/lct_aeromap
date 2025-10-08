@@ -63,11 +63,13 @@ const getStatusText = (status: UploadTask['status'], progress: number) => {
   z-index: 2000;
 }
 .upload-task {
-  background-color: #0f2346;
-  border: 1px solid #226bcb;
+  /* Фон: Темно-серый */
+  background-color: #111111;
+  /* Рамка: Темно-серая */
+  border: 1px solid #333333;
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
 }
 .task-info {
   display: flex;
@@ -84,26 +86,26 @@ const getStatusText = (status: UploadTask['status'], progress: number) => {
   max-width: 200px;
 }
 .status {
-  font-size: 0.8rem;
-  font-weight: bold;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
-.status.uploading { color: #a0c3ff; }
-.status.success { color: #64faff; }
-.status.error, .status.timeout { color: #ff8e8e; }
+/* Цвета статусов */
+.status.uploading { color: #ffc107; } /* Янтарный */
+.status.success { color: #30e2aa; }  /* Зеленый */
+.status.error, .status.timeout { color: #ff6666; } /* Красный */
 
 .progress-bar-wrapper {
-  width: 100%;
   height: 6px;
-  background-color: #0a1929;
+  background-color: #333333;
   border-radius: 3px;
   overflow: hidden;
 }
 .progress-bar {
   height: 100%;
-  border-radius: 3px;
   transition: width 0.3s ease;
 }
-.progress-bar.uploading { background-color: #30ceda; }
-.progress-bar.success { background-color: #64faff; }
-.progress-bar.error, .progress-bar.timeout { background-color: #ff8e8e; }
+/* Цвета прогресса */
+.progress-bar.uploading { background-color: #ffc107; }
+.progress-bar.success { background-color: #30e2aa; }
+.progress-bar.error, .progress-bar.timeout { background-color: #ff6666; }
 </style>
