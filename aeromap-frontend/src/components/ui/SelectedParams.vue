@@ -75,7 +75,7 @@ const formattedDate = computed(() => {
 }
 
 .params-content {
-  background: linear-gradient(to right, rgba(17, 17, 17, 0.8), rgba(51, 51, 51, 0.8));
+  /* background: linear-gradient(to right, rgba(17, 17, 17, 0.8), rgba(51, 51, 51, 0.8)); */
   backdrop-filter: blur(5px);
   border: 1px solid rgba(255, 193, 7, 0.3);
   border-radius: 12px;

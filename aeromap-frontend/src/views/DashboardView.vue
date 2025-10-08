@@ -246,11 +246,12 @@ onMounted(fetchDataForSidebar);
   display: flex;
   flex-direction: column;
   background-color: #000000;
+
 }
 
 .dashboard-content {
   flex: 1;
-  padding: 24px;
+  padding: 24px 64px; /* Увеличены боковые отступы с 24px до 32px */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -266,7 +267,7 @@ onMounted(fetchDataForSidebar);
 }
 
 .main-column {
-  display: grid;
+  /* display: grid; */
   grid-template-rows: 2fr 1fr;
   gap: 24px;
   min-height: 0;

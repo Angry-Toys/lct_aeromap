@@ -52,7 +52,7 @@ const logout = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 30px;
+  padding: 16px 64px;
   /* Убираем синий фон, который был ранее в этом файле */
   background-color: #000000;
   border-bottom: none;

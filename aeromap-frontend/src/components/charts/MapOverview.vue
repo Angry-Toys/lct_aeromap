@@ -68,17 +68,43 @@ const getBaseMapOption = (mapName: string) => ({
     roam: true,
     zoom: 1.2,
     center: [95, 65],
+    scaleLimit: { min: 0.5, max: 10 },
+    boundingCoords: [[30, 40], [180, 82]],
     itemStyle: {
       areaColor: '#1a1a1a',
-      borderColor: '#333333',
+      borderColor: '#000000',
       borderWidth: 1,
     },
     emphasis: {
       itemStyle: {
         areaColor: '#333333',
+        borderColor: '#ffc107',
+        borderWidth: 2,
       },
       label: {
-        show: false
+        show: false,
+        color: '#e0e0e0',
+        fontSize: 14,
+        fontWeight: '500',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        padding: [4, 8],
+        borderRadius: 4
+      }
+    },
+    select: {
+      itemStyle: {
+        areaColor: '#4f46e5', // Индиго для выделенного региона
+        borderColor: '#ffd54f', // Светлый янтарный для границы
+        borderWidth: 2,
+      },
+      label: {
+        show: true,
+        color: '#e0e0e0', // Мягкий белый для надписи
+        fontSize: 14,
+        fontWeight: '500',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        padding: [4, 8],
+        borderRadius: 4
       }
     }
   },
@@ -181,8 +207,8 @@ onMounted(() => {
 
 <style scoped>
 .chart-wrapper {
-  width: 100%; /* Полная ширина */
-  height: 80vh;
+  /* width: 100%; */
+  height: 60vh;
   position: relative;
   background-color: #000000;
   border: 1px solid #333333;
@@ -192,7 +218,10 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   color: #fff;
+  margin: 20px 0; /* Добавлен отступ сверху и снизу */
+  padding: 8px;
 }
+
 
 .map-container {
   width: 100%; /* Полная ширина */
