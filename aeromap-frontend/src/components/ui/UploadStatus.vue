@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { PropType } from 'vue';
+import { PropType, watch } from 'vue';
 
 // Определяем тип для задачи загрузки
 interface UploadTask {
@@ -27,7 +27,7 @@ interface UploadTask {
   status: 'uploading' | 'success' | 'error' | 'timeout';
 }
 
-defineProps({
+const props = defineProps({
   tasks: {
     type: Array as PropType<UploadTask[]>,
     required: true
@@ -49,63 +49,97 @@ const getStatusText = (status: UploadTask['status'], progress: number) => {
       return '';
   }
 };
+
+// Автоудаление задач через 3 секунды после завершения
+watch(
+  () => props.tasks,
+  (newTasks) => {
+    newTasks.forEach((task) => {
+      if (task.status === 'success' || task.status === 'error' || task.status === 'timeout') {
+        setTimeout(() => {
+          const taskIndex = props.tasks.findIndex(t => t.id === task.id);
+          if (taskIndex !== -1) {
+            props.tasks.splice(taskIndex, 1);
+          }
+        }, 3000); // 3 секунды
+      }
+    });
+  },
+  { deep: true }
+);
 </script>
 
 <style scoped>
 .upload-status-container {
   position: fixed;
   bottom: 20px;
-  right: 20px;
+  right: 40px; /* Отодвинули от края */
   width: 350px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   z-index: 2000;
 }
+
 .upload-task {
-  /* Фон: Темно-серый */
-  background-color: #111111;
-  /* Рамка: Темно-серая */
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(17, 17, 17, 0.9)); /* Градиент как в MetricCard */
   border: 1px solid #333333;
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 12px; /* Более скругленные углы */
+  padding: 16px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
 }
+
+.upload-task:hover {
+  border-color: #ffc107; /* Янтарная рамка при наведении */
+  box-shadow: 0 6px 20px rgba(255, 193, 7, 0.3);
+}
+
 .task-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
-  color: #fff;
+  color: #ffffff;
 }
+
 .filename {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+  color: #e0e0e0;
 }
+
 .status {
   font-size: 0.9rem;
   font-weight: 600;
 }
-/* Цвета статусов */
+
 .status.uploading { color: #ffc107; } /* Янтарный */
 .status.success { color: #30e2aa; }  /* Зеленый */
 .status.error, .status.timeout { color: #ff6666; } /* Красный */
 
 .progress-bar-wrapper {
   height: 6px;
-  background-color: #333333;
+  background: #1a1a1a; /* Как в MetricCard */
   border-radius: 3px;
   overflow: hidden;
 }
+
 .progress-bar {
   height: 100%;
   transition: width 0.3s ease;
+  background: linear-gradient(90deg, #ffac30, #ffc107); /* Янтарный градиент */
 }
-/* Цвета прогресса */
-.progress-bar.uploading { background-color: #ffc107; }
-.progress-bar.success { background-color: #30e2aa; }
-.progress-bar.error, .progress-bar.timeout { background-color: #ff6666; }
+
+.progress-bar.success {
+  background: linear-gradient(90deg, #30e2aa, #059669); /* Зеленый градиент */
+}
+
+.progress-bar.error, .progress-bar.timeout {
+  background: linear-gradient(90deg, #ff6666, #b53b3b); /* Красный градиент */
+}
 </style>

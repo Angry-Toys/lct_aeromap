@@ -163,7 +163,6 @@ const fetchDataForSidebar = async () => {
     const to = activeFilters.value.to || '2025-12-31';
     const selected = selectedRegion.value;
     const isAllRussia = selected === 'Russian Federation';
-
     console.log('🚀 Загрузка метрик:', { region: selected, period: { from, to } });
 
     // Получаем список месяцев
@@ -171,54 +170,107 @@ const fetchDataForSidebar = async () => {
     missingMonths.value = [];
     growthPercentData.value = [];
 
+    let regions = [];
+    if (isAllRussia) {
+      // Получаем список всех регионов динамически из /api/regions/flights
+      console.log('📂 Получаем список регионов для всей РФ...');
+      const regionsResponse = await axios.get('http://localhost:5000/api/regions/flights', {
+        params: {
+          from,
+          to,
+          metric: activeFilters.value.metric || 'count',
+        },
+      });
+      regions = regionsResponse.data.map(item => item.name);
+      console.log('📋 Получено регионов:', regions.length, regions);
+      if (regions.length === 0) {
+        console.warn('⚠️ Нет регионов из API. Устанавливаем метрики в null.');
+        metrics.totalFlights = null;
+        metrics.avgDuration = null;
+        metrics.peakLoad = null;
+        metrics.flightDensity = null;
+        metrics.zeroDays = null;
+        metrics.growthPercent = null;
+        metrics.hourlyDistribution = null;
+        growthPercentData.value = [];
+        return;
+      }
+    }
+
     // Параллельные вызовы /metrics для каждого месяца
     const promises = months.map(async ({ year, month }, index) => {
-      const params: any = { year: String(year), month };
       if (!isAllRussia) {
-        params.region = selected;
-      }
-      const url = `http://localhost:5000/metrics?${new URLSearchParams(params).toString()}`;
-      console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
-
-      try {
-        const response = await axios.get('http://localhost:5000/metrics', { params });
-        console.log(`✅ Ответ для ${url}:`, response.data);
-        let data = response.data;
-        if (!Array.isArray(data)) {
-          data = [data];
+        // Для конкретного региона — один запрос
+        const params: any = { year: String(year), month };
+        if (selected) {
+          params.region = selected;
         }
+        const url = `http://localhost:5000/metrics?${new URLSearchParams(params).toString()}`;
+        console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
+        try {
+          const response = await axios.get('http://localhost:5000/metrics', { params });
+          console.log(`✅ Ответ для ${url}:`, response.data);
+          let data = response.data;
+          if (!Array.isArray(data)) {
+            data = [data];
+          }
+          if (data.length === 0) {
+            missingMonths.value.push(`${year}-${month}`);
+          }
+          return { data, month: `${year}-${month}` };
+        } catch (error: any) {
+          console.error(`❌ Ошибка для ${url}:`, {
+            params,
+            error: error.message,
+            response: error.response?.data || 'Нет данных ответа',
+          });
+          missingMonths.value.push(`${year}-${month}`);
+          return { data: [], month: `${year}-${month}` };
+        }
+      } else {
+        // Для всей РФ — параллельные запросы по всем регионам за месяц
+        const monthParamsBase = { year: String(year), month };
+        const monthPromises = regions.map(async (region) => {
+          const params = { ...monthParamsBase, region };
+          const url = `http://localhost:5000/metrics?${new URLSearchParams(params).toString()}`;
+          try {
+            const response = await axios.get('http://localhost:5000/metrics', { params });
+            let data = response.data;
+            if (!Array.isArray(data)) {
+              data = [data];
+            }
+            return data;
+          } catch (error: any) {
+            console.error(`❌ Ошибка для региона ${region} в ${year}-${month}:`, error.message);
+            return [];
+          }
+        });
+        const monthDataArrays = await Promise.all(monthPromises);
+        const data = monthDataArrays.flat();
+        const urlExample = `http://localhost:5000/metrics?year=${year}&month=${month} (для всех регионов)`;
+        console.log(`✅ Агрегированный ответ для ${urlExample}:`, { count: data.length, data });
         if (data.length === 0) {
           missingMonths.value.push(`${year}-${month}`);
         }
         return { data, month: `${year}-${month}` };
-      } catch (error: any) {
-        console.error(`❌ Ошибка для ${url}:`, {
-          params,
-          error: error.message,
-          response: error.response?.data || 'Нет данных ответа',
-        });
-        missingMonths.value.push(`${year}-${month}`);
-        return { data: [], month: `${year}-${month}` };
       }
     });
 
     const monthResponses = await Promise.all(promises);
     const allRegionsData = monthResponses.flatMap(response => response.data);
-
     if (allRegionsData.length === 0) {
-      console.warn('⚠️ Нет данных от API /metrics. Устанавливаем метрики в 0.');
-      metrics.totalFlights = 0;
-      metrics.avgDuration = 0;
-      metrics.peakLoad = 0;
-      metrics.flightDensity = 0;
-      metrics.zeroDays = 0;
-      metrics.growthPercent = 0;
+      console.warn('⚠️ Нет данных от API /metrics. Устанавливаем метрики в null.');
+      metrics.totalFlights = null;
+      metrics.avgDuration = null;
+      metrics.peakLoad = null;
+      metrics.flightDensity = null;
+      metrics.zeroDays = null;
+      metrics.growthPercent = null;
       metrics.hourlyDistribution = null;
       growthPercentData.value = [];
       return;
     }
-
-    // Агрегация
+    // Агрегация (без изменений)
     const totals = {
       totalFlights: 0,
       totalDuration: 0,
@@ -231,7 +283,6 @@ const fetchDataForSidebar = async () => {
       hasPeakLoad: false,
       hasFlightDensity: false,
     };
-
     // Собираем growthPercent по месяцам для графика
     const growthByMonth: { [key: string]: number[] } = {};
     monthResponses.forEach(({ data, month }) => {
@@ -240,7 +291,6 @@ const fetchDataForSidebar = async () => {
         growthByMonth[month] = [parseFloat(monthGrowth.toFixed(1))]; // Округление до 1 знака
       }
     });
-
     allRegionsData.forEach((region: any) => {
       totals.totalFlights += region.flight_count || 0;
       totals.totalDuration += region.total_duration_min || 0;
@@ -248,7 +298,6 @@ const fetchDataForSidebar = async () => {
       totals.zeroDays += region.zero_days || 0;
       totals.growthPercentList.push(region.growth_percent || 0);
       totals.flightDensityList.push(region.flight_density || 0);
-
       // Отмечаем наличие данных
       if (region.peak_load_hourly || region.peak_load_hourly === 0) {
         totals.hasPeakLoad = true;
@@ -256,7 +305,6 @@ const fetchDataForSidebar = async () => {
       if (region.flight_density || region.flight_density === 0) {
         totals.hasFlightDensity = true;
       }
-
       // Суммируем hourly_distribution
       const hourly = region.hourly_distribution || [];
       if (hourly.length > 0) {
@@ -269,13 +317,11 @@ const fetchDataForSidebar = async () => {
         }
       });
     });
-
     // Формируем данные для графика роста
     growthPercentData.value = months.map(({ year, month }) => ({
       month: `${year}-${month}`,
       value: growthByMonth[`${year}-${month}`]?.[0] || 0,
     }));
-
     // Проверка на отсутствие данных
     if (!totals.hasPeakLoad) {
       console.warn('⚠️ peak_load_hourly отсутствует во всех данных');
@@ -286,7 +332,6 @@ const fetchDataForSidebar = async () => {
     if (!totals.hasHourlyData) {
       console.warn('⚠️ hourly_distribution отсутствует или пусто во всех данных');
     }
-
     // Вычисления
     metrics.totalFlights = totals.totalFlights;
     metrics.avgDuration = totals.totalFlights > 0 ? parseFloat((totals.totalDuration / totals.totalFlights).toFixed(1)) : 0;
@@ -298,7 +343,6 @@ const fetchDataForSidebar = async () => {
     metrics.flightDensity = totals.flightDensityList.length > 0
       ? parseFloat((totals.flightDensityList.reduce((a, b) => a + b, 0) / totals.flightDensityList.length).toFixed(4))
       : 0;
-
     // Среднесуточная hourly динамика
     const startDate = new Date(from);
     const endDate = new Date(to);
@@ -308,7 +352,6 @@ const fetchDataForSidebar = async () => {
       count: totalDays > 0 ? Math.round(sumCount / totalDays) : 0,
     }));
     metrics.hourlyDistribution = totals.hourlySums.every(c => c === 0) ? null : hourlyDistributionTemp;
-
     console.log('🎯 Финальные метрики:', {
       totalFlights: metrics.totalFlights,
       avgDuration: metrics.avgDuration,
@@ -321,12 +364,12 @@ const fetchDataForSidebar = async () => {
     });
   } catch (error) {
     console.error('❌ Критическая ошибка в fetchDataForSidebar:', error);
-    metrics.totalFlights = 0;
-    metrics.avgDuration = 0;
-    metrics.peakLoad = 0;
-    metrics.flightDensity = 0;
-    metrics.zeroDays = 0;
-    metrics.growthPercent = 0;
+    metrics.totalFlights = null;
+    metrics.avgDuration = null;
+    metrics.peakLoad = null;
+    metrics.flightDensity = null;
+    metrics.zeroDays = null;
+    metrics.growthPercent = null;
     metrics.hourlyDistribution = null;
     growthPercentData.value = [];
   } finally {
@@ -351,7 +394,7 @@ const executeUpload = async (task: UploadTask) => {
   formData.append('file', task.file);
   try {
     await axios.post('http://localhost:5000/upload', formData, {
-      timeout: 30000,
+      timeout: 300000, // 5 минут (300000 мс) по регламенту
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total) {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);

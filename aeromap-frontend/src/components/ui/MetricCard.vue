@@ -16,11 +16,11 @@
 
         <div class="value-group">
           <p class="value">
-            <span v-if="value === null || value === 0">Нет данных</span>
+            <span v-if="value === null">Нет данных</span>
             <span v-else>
               <span v-if="title === 'Рост за период' && typeof value === 'number' && value > 0">+</span>
               <span v-if="title === 'Рост за период' && typeof value === 'number' && value < 0">–</span>
-              {{ typeof value === 'number' && title === 'Рост за период' ? Math.abs(value) : value }} <span v-if="unit" class="unit-inline">{{ unit }}</span>
+              {{ value }} <span v-if="unit" class="unit-inline">{{ unit }}</span>
             </span>
           </p>
           <p class="title">{{ title }}</p>
