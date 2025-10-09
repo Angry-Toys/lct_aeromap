@@ -1,3 +1,4 @@
+```vue
 <template>
   <div class="dashboard-layout">
     <AppHeader @upload-clicked="isModalVisible = true" />
@@ -41,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, reactive, watch } from 'vue';
 import axios from 'axios';
 
 // Импорты всех компонентов
@@ -81,6 +82,7 @@ const selectedRegion = ref<string>('Russian Federation');
 const handleRegionSelected = (region: string) => {
   console.log('Region selected:', region);
   selectedRegion.value = region;
+  fetchDataForSidebar();
 };
 
 // Единый объект с фильтрами
@@ -109,12 +111,16 @@ const uploadTasks = ref<UploadTask[]>([]);
 const fetchDataForSidebar = async () => {
   isLoadingMetrics.value = true;
   try {
-    const response = await axios.get('http://localhost:5000/metrics', {
-      params: {
-        year: activeFilters.value.from?.split('-')[0] || '2025',
-        month: activeFilters.value.from?.split('-')[1] || '01',
-      },
-    });
+    const params = {
+      year: activeFilters.value.from?.split('-')[0] || '2025',
+      month: activeFilters.value.from?.split('-')[1] || '01',
+    };
+
+    if (selectedRegion.value !== 'Russian Federation') {
+      params.region = selectedRegion.value;
+    }
+
+    const response = await axios.get('http://localhost:5000/metrics', { params });
 
     let regionsData = response.data;
 
@@ -165,7 +171,17 @@ const fetchDataForSidebar = async () => {
             ).toFixed(2)
           )
         : 0;
-      metrics.hourlyDistribution = regionsData[0].hourly_distribution || null;
+
+      // Агрегация hourly_distribution
+      const aggregatedHourly = Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        count: regionsData.reduce(
+          (sum, reg) =>
+            sum + (reg.hourly_distribution?.find((h: any) => h.hour === hour)?.count || 0),
+          0
+        ),
+      }));
+      metrics.hourlyDistribution = aggregatedHourly;
     }
   } catch (error) {
     console.error('Не удалось загрузить метрики для сайдбара:', error);
@@ -314,3 +330,4 @@ onMounted(fetchDataForSidebar);
   }
 }
 </style>
+```
