@@ -189,10 +189,10 @@ const fetchDataForSidebar = async () => {
       if (selected) {
         params.region = selected;
       }
-      const url = `http://localhost:5000/metrics?${new URLSearchParams(params).toString()}`;
+      const url = `/api/metrics?${new URLSearchParams(params).toString()}`;
       console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
       try {
-        const response = await axios.get('http://localhost:5000/metrics', { params });
+        const response = await axios.get('/api/metrics', { params });
         console.log(`✅ Ответ для ${url}:`, response.data);
         let data = response.data;
         if (!Array.isArray(data)) {
@@ -372,7 +372,7 @@ const executeUpload = async (task: UploadTask) => {
   const formData = new FormData();
   formData.append('file', task.file);
   try {
-    await axios.post('http://localhost:5000/upload', formData, {
+    await axios.post('/api/upload', formData, {
       timeout: 300000, // 5 минут (300000 мс) по регламенту
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total) {

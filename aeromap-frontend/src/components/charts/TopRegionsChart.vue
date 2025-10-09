@@ -40,7 +40,7 @@ const fetchData = async () => {
     const fromDate = props.filters.from || '2025-01-01';
     const toDate = props.filters.to || '2025-12-31';
 
-    const response = await axios.get('http://localhost:5000/api/regions/flights', {
+    const response = await axios.get('/api/api/regions/flights', {
       params: {
         from: fromDate,
         to: toDate,
