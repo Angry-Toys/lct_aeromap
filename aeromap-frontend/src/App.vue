@@ -1,28 +1,29 @@
 <template>
-  <div id="app">
-    <h1>Анализ полетов БПЛА</h1>
-    <MapOverview :flightData="sampleData" />
-  </div>
+  <RouterView />
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import MapOverview from '@/components/MapOverview.vue';
-
-const sampleData = ref([
-  { name: 'Москва', value: 500 },
-  { name: 'Санкт-Петербург', value: 300 },
-]);
+// Скриптовая часть теперь пуста, так как App.vue больше не управляет
+// никакими данными или компонентами напрямую.
 </script>
 
 <style>
+/* Сюда мы импортируем глобальные стили, которые будут действовать
+  во всем приложении, обеспечивая единый вид.
+*/
+@import '@/assets/base.css';
+
+/* Эти стили применяются к корневому элементу #app.
+  Они говорят приложению занимать всю высоту экрана и убирают
+  ограничения по ширине, что важно для полноэкранного дашборда.
+  Ваши старые стили здесь не нужны.
+*/
 #app {
-  font-family: Arial, sans-serif;
-  text-align: center;
-  padding: 20px;
-  background: #f0f0f0;
-}
-h1 {
-  color: #2d8aff;
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-weight: normal;
 }
 </style>
