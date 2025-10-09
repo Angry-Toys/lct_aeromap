@@ -1,5 +1,5 @@
 <template>
-  <div class="metric-card" @click="$emit('card-click')">
+  <div class="metric-card" @click="$emit('card-click', title)">
     <div v-if="isLoading" class="loader-skeleton">
       <div class="skeleton-line title-line"></div>
       <div class="skeleton-line value-line"></div>
@@ -17,7 +17,11 @@
         <div class="value-group">
           <p class="value">
             <span v-if="value === null || value === 0">Нет данных</span>
-            <span v-else>{{ value }} <span v-if="unit" class="unit-inline">{{ unit }}</span></span>
+            <span v-else>
+              <span v-if="title === 'Рост за период' && typeof value === 'number' && value > 0">+</span>
+              <span v-if="title === 'Рост за период' && typeof value === 'number' && value < 0">–</span>
+              {{ typeof value === 'number' && title === 'Рост за период' ? Math.abs(value) : value }} <span v-if="unit" class="unit-inline">{{ unit }}</span>
+            </span>
           </p>
           <p class="title">{{ title }}</p>
         </div>

@@ -8,8 +8,14 @@
 
       <div class="metrics-row">
         <MetricCard title="Всего полётов" :value="metrics.totalFlights" :is-loading="isLoadingMetrics" />
-        <MetricCard title="Средняя длит." :value="metrics.avgDuration" :is-loading="isLoadingMetrics" unit="мин." />
-        <MetricCard title="Рост за месяц" :value="metrics.growthPercent" :is-loading="isLoadingMetrics" unit="%" />
+        <MetricCard title="Средняя длительность" :value="metrics.avgDuration" :is-loading="isLoadingMetrics" unit="мин." />
+        <MetricCard
+          title="Рост за период"
+          :value="metrics.growthPercent"
+          :is-loading="isLoadingMetrics"
+          unit="%"
+          @card-click="showGrowthModal = true"
+        />
         <MetricCard title="Пик. нагрузка (в час)" :value="metrics.peakLoad" :is-loading="isLoadingMetrics" />
         <MetricCard title="Flight Density (средн.)" :value="metrics.flightDensity" :is-loading="isLoadingMetrics" unit="/1k км²" />
         <MetricCard title="Нулевые дни (сумм.)" :value="metrics.zeroDays" :is-loading="isLoadingMetrics" />
@@ -35,7 +41,11 @@
       @close="isModalVisible = false"
       @start-upload="handleStartUpload"
     />
-
+    <GrowthChartModal
+      v-if="showGrowthModal"
+      :data="growthPercentData"
+      @close="showGrowthModal = false"
+    />
     <UploadStatus :tasks="uploadTasks" />
   </div>
 </template>
@@ -54,6 +64,7 @@ import HourlyActivityChart from '../components/charts/HourlyActivityChart.vue';
 import MetricCard from '../components/ui/MetricCard.vue';
 import UploadModal from '../components/ui/UploadModal.vue';
 import UploadStatus from '../components/ui/UploadStatus.vue';
+import GrowthChartModal from '../components/ui/GrowthChartModal.vue';
 
 // Определяем тип для задачи загрузки
 interface UploadTask {
@@ -70,17 +81,31 @@ interface Filters {
   metric?: 'count' | 'avg_duration';
 }
 
+// Тип для данных графика роста
+interface GrowthData {
+  month: string;
+  value: number;
+}
+
 // --- СОСТОЯНИЕ КОМПОНЕНТА ---
 const isModalVisible = ref(false);
 const isLoadingMetrics = ref(true);
 const componentKey = ref(0);
 const selectedRegion = ref<string>('Russian Federation');
-const missingMonths = ref<string[]>([]); // Для хранения 'YYYY-MM' без данных
+const missingMonths = ref<string[]>([]);
+const showGrowthModal = ref(false);
+const growthPercentData = ref<GrowthData[]>([]);
 
 const handleRegionSelected = (region: string) => {
   console.log('Region selected:', region);
   selectedRegion.value = region;
   debouncedFetch();
+};
+
+const handleCardClick = (title: string) => {
+  if (title === 'Рост за период') {
+    showGrowthModal.value = true;
+  }
 };
 
 // Единый объект с фильтрами
@@ -144,6 +169,7 @@ const fetchDataForSidebar = async () => {
     // Получаем список месяцев
     const months = getMonthsInRange(from, to);
     missingMonths.value = [];
+    growthPercentData.value = [];
 
     // Параллельные вызовы /metrics для каждого месяца
     const promises = months.map(async ({ year, month }, index) => {
@@ -164,7 +190,7 @@ const fetchDataForSidebar = async () => {
         if (data.length === 0) {
           missingMonths.value.push(`${year}-${month}`);
         }
-        return data;
+        return { data, month: `${year}-${month}` };
       } catch (error: any) {
         console.error(`❌ Ошибка для ${url}:`, {
           params,
@@ -172,12 +198,12 @@ const fetchDataForSidebar = async () => {
           response: error.response?.data || 'Нет данных ответа',
         });
         missingMonths.value.push(`${year}-${month}`);
-        return [];
+        return { data: [], month: `${year}-${month}` };
       }
     });
 
     const monthResponses = await Promise.all(promises);
-    const allRegionsData = monthResponses.flat();
+    const allRegionsData = monthResponses.flatMap(response => response.data);
 
     if (allRegionsData.length === 0) {
       console.warn('⚠️ Нет данных от API /metrics. Устанавливаем метрики в 0.');
@@ -188,6 +214,7 @@ const fetchDataForSidebar = async () => {
       metrics.zeroDays = 0;
       metrics.growthPercent = 0;
       metrics.hourlyDistribution = null;
+      growthPercentData.value = [];
       return;
     }
 
@@ -204,6 +231,15 @@ const fetchDataForSidebar = async () => {
       hasPeakLoad: false,
       hasFlightDensity: false,
     };
+
+    // Собираем growthPercent по месяцам для графика
+    const growthByMonth: { [key: string]: number[] } = {};
+    monthResponses.forEach(({ data, month }) => {
+      if (data.length > 0) {
+        const monthGrowth = data.reduce((sum: number, region: any) => sum + (region.growth_percent || 0), 0) / data.length;
+        growthByMonth[month] = [parseFloat(monthGrowth.toFixed(1))]; // Округление до 1 знака
+      }
+    });
 
     allRegionsData.forEach((region: any) => {
       totals.totalFlights += region.flight_count || 0;
@@ -233,6 +269,12 @@ const fetchDataForSidebar = async () => {
         }
       });
     });
+
+    // Формируем данные для графика роста
+    growthPercentData.value = months.map(({ year, month }) => ({
+      month: `${year}-${month}`,
+      value: growthByMonth[`${year}-${month}`]?.[0] || 0,
+    }));
 
     // Проверка на отсутствие данных
     if (!totals.hasPeakLoad) {
@@ -275,6 +317,7 @@ const fetchDataForSidebar = async () => {
       zeroDays: metrics.zeroDays,
       growthPercent: metrics.growthPercent,
       hourlyDistribution: metrics.hourlyDistribution,
+      growthPercentData: growthPercentData.value,
     });
   } catch (error) {
     console.error('❌ Критическая ошибка в fetchDataForSidebar:', error);
@@ -285,6 +328,7 @@ const fetchDataForSidebar = async () => {
     metrics.zeroDays = 0;
     metrics.growthPercent = 0;
     metrics.hourlyDistribution = null;
+    growthPercentData.value = [];
   } finally {
     isLoadingMetrics.value = false;
   }

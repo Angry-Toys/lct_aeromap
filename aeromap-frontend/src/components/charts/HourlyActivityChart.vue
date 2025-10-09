@@ -66,7 +66,7 @@ const updateChart = () => {
       textStyle: { color: '#fff' },
       formatter: (params: any) => {
         const item = params[0];
-        return `Час **${item.name}:00** <br/> Полетов: **${item.value}**`;
+        return `Час ${item.name}:00 <br/> Полетов: ${item.value}`;
       }
     },
     grid: {
@@ -119,7 +119,7 @@ watch(() => props.data, updateChart, { immediate: true });
   border: 1px solid #333333;
   border-radius: 12px;
   padding: 16px;
-  height: 300px;
+  height: 400px;
   position: relative;
 }
 .status-loading {
