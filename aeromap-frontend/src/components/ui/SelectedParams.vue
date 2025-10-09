@@ -24,6 +24,17 @@
       <div class="date-group">
         <p class="label">Период</p>
         <p class="date-value">{{ formattedDate }}</p>
+        <div v-if="formattedMissingRange" class="missing-ranges">
+          <div class="tooltip-container">
+            <span class="missing-badge">
+              {{ formattedMissingRange }}
+            </span>
+            <div class="tooltip">
+              В периоде есть месяца без данных
+              <!-- Месяцы без доступных данных: {{ formattedMissingRange }} -->
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -42,6 +53,7 @@ interface Filters {
 const props = defineProps<{
   filters: Filters;
   selectedRegion?: string;
+  missingMonths: string[];
 }>();
 
 // Форматирование дат в русский читаемый вид
@@ -66,6 +78,15 @@ const formattedDate = computed(() => {
 
   return `${fromFormatted} - ${toFormatted}`;
 });
+
+// Форматирование пропущенных месяцев как "первый - последний"
+const formattedMissingRange = computed(() => {
+  if (props.missingMonths.length === 0) return '';
+  const sorted = [...props.missingMonths].sort();
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  return first === last ? first : `${first} - ${last}`;
+});
 </script>
 
 <style scoped>
@@ -75,7 +96,6 @@ const formattedDate = computed(() => {
 }
 
 .params-content {
-  /* background: linear-gradient(to right, rgba(17, 17, 17, 0.8), rgba(51, 51, 51, 0.8)); */
   backdrop-filter: blur(5px);
   border: 1px solid rgba(255, 193, 7, 0.3);
   border-radius: 12px;
@@ -142,5 +162,54 @@ const formattedDate = computed(() => {
   color: #ffffff;
   margin: 0;
   margin-top: 2px;
+}
+
+.missing-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: flex-end;
+}
+
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+}
+
+.missing-badge {
+  background-color: #a62828;
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition: background-color 0.2s ease;
+  cursor: pointer;
+}
+
+.missing-badge:hover {
+  background-color: #b53b3b;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(0% - 40px);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  display: none;
+  transition: none;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.tooltip-container:hover .tooltip {
+  display: block;
 }
 </style>

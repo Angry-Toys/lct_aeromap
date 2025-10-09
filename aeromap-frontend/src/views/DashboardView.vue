@@ -1,11 +1,10 @@
-```vue
 <template>
   <div class="dashboard-layout">
     <AppHeader @upload-clicked="isModalVisible = true" />
 
     <main class="dashboard-content">
       <DashboardFilters @filters-updated="handleFiltersUpdate" />
-      <SelectedParams :filters="activeFilters" :selectedRegion="selectedRegion" />
+      <SelectedParams :filters="activeFilters" :selectedRegion="selectedRegion" :missingMonths="missingMonths" />
 
       <div class="metrics-row">
         <MetricCard title="Всего полётов" :value="metrics.totalFlights" :is-loading="isLoadingMetrics" />
@@ -42,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive, watch } from 'vue';
+import { ref, onMounted, reactive } from 'vue';
 import axios from 'axios';
 
 // Импорты всех компонентов
@@ -72,17 +71,16 @@ interface Filters {
 }
 
 // --- СОСТОЯНИЕ КОМПОНЕНТА ---
-
 const isModalVisible = ref(false);
 const isLoadingMetrics = ref(true);
 const componentKey = ref(0);
 const selectedRegion = ref<string>('Russian Federation');
-
+const missingMonths = ref<string[]>([]); // Для хранения 'YYYY-MM' без данных
 
 const handleRegionSelected = (region: string) => {
   console.log('Region selected:', region);
   selectedRegion.value = region;
-  fetchDataForSidebar();
+  debouncedFetch();
 };
 
 // Единый объект с фильтрами
@@ -94,104 +92,205 @@ const activeFilters = ref<Filters>({
 
 // Реактивный объект для хранения всех метрик
 const metrics = reactive({
-  totalFlights: null,
-  avgDuration: null,
-  growthPercent: null,
-  peakLoad: null,
-  flightDensity: null,
-  zeroDays: null,
-  hourlyDistribution: null,
+  totalFlights: null as number | null,
+  avgDuration: null as number | null,
+  growthPercent: null as number | null,
+  peakLoad: null as number | null,
+  flightDensity: null as number | null,
+  zeroDays: null as number | null,
+  hourlyDistribution: null as { hour: number; count: number }[] | null,
 });
 
 // Массив для хранения всех фоновых задач на загрузку
 const uploadTasks = ref<UploadTask[]>([]);
 
+// Debounce для fetchDataForSidebar (задержка 300мс)
+let debounceTimer: number | null = null;
+const debouncedFetch = () => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    fetchDataForSidebar();
+  }, 300);
+};
+
 // --- ЛОГИКА РАБОТЫ С ДАННЫМИ ---
+
+// Функция для получения списка месяцев в периоде
+const getMonthsInRange = (from: string, to: string) => {
+  const start = new Date(from);
+  const end = new Date(to);
+  const months: { year: number; month: string }[] = [];
+  const current = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (current <= end) {
+    months.push({
+      year: current.getFullYear(),
+      month: String(current.getMonth() + 1).padStart(2, '0'),
+    });
+    current.setMonth(current.getMonth() + 1);
+  }
+  return months;
+};
 
 const fetchDataForSidebar = async () => {
   isLoadingMetrics.value = true;
   try {
-    const params = {
-      year: activeFilters.value.from?.split('-')[0] || '2025',
-      month: activeFilters.value.from?.split('-')[1] || '01',
+    const from = activeFilters.value.from || '2025-01-01';
+    const to = activeFilters.value.to || '2025-12-31';
+    const selected = selectedRegion.value;
+    const isAllRussia = selected === 'Russian Federation';
+
+    console.log('🚀 Загрузка метрик:', { region: selected, period: { from, to } });
+
+    // Получаем список месяцев
+    const months = getMonthsInRange(from, to);
+    missingMonths.value = [];
+
+    // Параллельные вызовы /metrics для каждого месяца
+    const promises = months.map(async ({ year, month }, index) => {
+      const params: any = { year: String(year), month };
+      if (!isAllRussia) {
+        params.region = selected;
+      }
+      const url = `http://localhost:5000/metrics?${new URLSearchParams(params).toString()}`;
+      console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
+
+      try {
+        const response = await axios.get('http://localhost:5000/metrics', { params });
+        console.log(`✅ Ответ для ${url}:`, response.data);
+        let data = response.data;
+        if (!Array.isArray(data)) {
+          data = [data];
+        }
+        if (data.length === 0) {
+          missingMonths.value.push(`${year}-${month}`);
+        }
+        return data;
+      } catch (error: any) {
+        console.error(`❌ Ошибка для ${url}:`, {
+          params,
+          error: error.message,
+          response: error.response?.data || 'Нет данных ответа',
+        });
+        missingMonths.value.push(`${year}-${month}`);
+        return [];
+      }
+    });
+
+    const monthResponses = await Promise.all(promises);
+    const allRegionsData = monthResponses.flat();
+
+    if (allRegionsData.length === 0) {
+      console.warn('⚠️ Нет данных от API /metrics. Устанавливаем метрики в 0.');
+      metrics.totalFlights = 0;
+      metrics.avgDuration = 0;
+      metrics.peakLoad = 0;
+      metrics.flightDensity = 0;
+      metrics.zeroDays = 0;
+      metrics.growthPercent = 0;
+      metrics.hourlyDistribution = null;
+      return;
+    }
+
+    // Агрегация
+    const totals = {
+      totalFlights: 0,
+      totalDuration: 0,
+      peakLoad: 0,
+      zeroDays: 0,
+      growthPercentList: [] as number[],
+      flightDensityList: [] as number[],
+      hourlySums: Array(24).fill(0),
+      hasHourlyData: false,
+      hasPeakLoad: false,
+      hasFlightDensity: false,
     };
 
-    if (selectedRegion.value !== 'Russian Federation') {
-      params.region = selectedRegion.value;
-    }
+    allRegionsData.forEach((region: any) => {
+      totals.totalFlights += region.flight_count || 0;
+      totals.totalDuration += region.total_duration_min || 0;
+      totals.peakLoad = Math.max(totals.peakLoad, region.peak_load_hourly || 0);
+      totals.zeroDays += region.zero_days || 0;
+      totals.growthPercentList.push(region.growth_percent || 0);
+      totals.flightDensityList.push(region.flight_density || 0);
 
-    const response = await axios.get('http://localhost:5000/metrics', { params });
+      // Отмечаем наличие данных
+      if (region.peak_load_hourly || region.peak_load_hourly === 0) {
+        totals.hasPeakLoad = true;
+      }
+      if (region.flight_density || region.flight_density === 0) {
+        totals.hasFlightDensity = true;
+      }
 
-    let regionsData = response.data;
-
-    if (!Array.isArray(regionsData)) {
-      regionsData = [regionsData];
-    }
-
-    if (regionsData && regionsData.length > 0) {
-      const totals = regionsData.reduce(
-        (acc: any, region: any) => {
-          acc.totalFlights += region.flight_count || 0;
-          acc.totalDuration += region.total_duration_min || 0;
-          acc.peakLoad = Math.max(acc.peakLoad, region.peak_load || 0);
-          acc.growthPercentList.push(region.growth_percent || 0);
-          acc.flightDensityList.push(region.flight_density || 0);
-          acc.zeroDays += region.zero_days || 0;
-          return acc;
-        },
-        {
-          totalFlights: 0,
-          totalDuration: 0,
-          peakLoad: 0,
-          growthPercentList: [],
-          flightDensityList: [],
-          zeroDays: 0,
+      // Суммируем hourly_distribution
+      const hourly = region.hourly_distribution || [];
+      if (hourly.length > 0) {
+        totals.hasHourlyData = true;
+      }
+      hourly.forEach((h: any) => {
+        const hour = Math.floor(h.hour);
+        if (hour >= 0 && hour < 24) {
+          totals.hourlySums[hour] += h.count || 0;
         }
-      );
+      });
+    });
 
-      metrics.totalFlights = totals.totalFlights;
-      metrics.avgDuration = totals.totalFlights
-        ? parseFloat((totals.totalDuration / totals.totalFlights).toFixed(1))
-        : 0;
-      metrics.peakLoad = totals.peakLoad;
-      metrics.zeroDays = totals.zeroDays;
-      metrics.growthPercent = totals.growthPercentList.length
-        ? parseFloat(
-            (
-              totals.growthPercentList.reduce((a: number, b: number) => a + b, 0) /
-              totals.growthPercentList.length
-            ).toFixed(1)
-          )
-        : 0;
-      metrics.flightDensity = totals.flightDensityList.length
-        ? parseFloat(
-            (
-              totals.flightDensityList.reduce((a: number, b: number) => a + b, 0) /
-              totals.flightDensityList.length
-            ).toFixed(2)
-          )
-        : 0;
-
-      // Агрегация hourly_distribution
-      const aggregatedHourly = Array.from({ length: 24 }, (_, hour) => ({
-        hour,
-        count: regionsData.reduce(
-          (sum, reg) =>
-            sum + (reg.hourly_distribution?.find((h: any) => h.hour === hour)?.count || 0),
-          0
-        ),
-      }));
-      metrics.hourlyDistribution = aggregatedHourly;
+    // Проверка на отсутствие данных
+    if (!totals.hasPeakLoad) {
+      console.warn('⚠️ peak_load_hourly отсутствует во всех данных');
     }
+    if (!totals.hasFlightDensity) {
+      console.warn('⚠️ flight_density отсутствует во всех данных');
+    }
+    if (!totals.hasHourlyData) {
+      console.warn('⚠️ hourly_distribution отсутствует или пусто во всех данных');
+    }
+
+    // Вычисления
+    metrics.totalFlights = totals.totalFlights;
+    metrics.avgDuration = totals.totalFlights > 0 ? parseFloat((totals.totalDuration / totals.totalFlights).toFixed(1)) : 0;
+    metrics.peakLoad = totals.peakLoad || 0;
+    metrics.zeroDays = totals.zeroDays;
+    metrics.growthPercent = totals.growthPercentList.length > 0
+      ? parseFloat((totals.growthPercentList.reduce((a, b) => a + b, 0) / totals.growthPercentList.length).toFixed(1))
+      : 0;
+    metrics.flightDensity = totals.flightDensityList.length > 0
+      ? parseFloat((totals.flightDensityList.reduce((a, b) => a + b, 0) / totals.flightDensityList.length).toFixed(4))
+      : 0;
+
+    // Среднесуточная hourly динамика
+    const startDate = new Date(from);
+    const endDate = new Date(to);
+    const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const hourlyDistributionTemp = totals.hourlySums.map((sumCount, hour) => ({
+      hour,
+      count: totalDays > 0 ? Math.round(sumCount / totalDays) : 0,
+    }));
+    metrics.hourlyDistribution = totals.hourlySums.every(c => c === 0) ? null : hourlyDistributionTemp;
+
+    console.log('🎯 Финальные метрики:', {
+      totalFlights: metrics.totalFlights,
+      avgDuration: metrics.avgDuration,
+      peakLoad: metrics.peakLoad,
+      flightDensity: metrics.flightDensity,
+      zeroDays: metrics.zeroDays,
+      growthPercent: metrics.growthPercent,
+      hourlyDistribution: metrics.hourlyDistribution,
+    });
   } catch (error) {
-    console.error('Не удалось загрузить метрики для сайдбара:', error);
+    console.error('❌ Критическая ошибка в fetchDataForSidebar:', error);
+    metrics.totalFlights = 0;
+    metrics.avgDuration = 0;
+    metrics.peakLoad = 0;
+    metrics.flightDensity = 0;
+    metrics.zeroDays = 0;
+    metrics.growthPercent = 0;
+    metrics.hourlyDistribution = null;
   } finally {
     isLoadingMetrics.value = false;
   }
 };
 
 // --- ЛОГИКА ЗАГРУЗКИ ФАЙЛОВ ---
-
 const handleStartUpload = (file: File) => {
   const newTask: UploadTask = {
     id: Date.now(),
@@ -238,7 +337,6 @@ const executeUpload = async (task: UploadTask) => {
 };
 
 // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
-
 const handleFiltersUpdate = (filters: Filters) => {
   console.log('Received filters in DashboardView:', filters);
   activeFilters.value = {
@@ -246,14 +344,12 @@ const handleFiltersUpdate = (filters: Filters) => {
     to: filters.to || '2025-12-31',
     metric: filters.metric || 'count',
   };
-  fetchDataForSidebar();
+  debouncedFetch();
   componentKey.value++;
 };
 
-
-
 // --- ХУК ЖИЗНЕННОГО ЦИКЛА ---
-onMounted(fetchDataForSidebar);
+onMounted(() => fetchDataForSidebar());
 </script>
 
 <style scoped>
@@ -262,12 +358,11 @@ onMounted(fetchDataForSidebar);
   display: flex;
   flex-direction: column;
   background-color: #000000;
-
 }
 
 .dashboard-content {
   flex: 1;
-  padding: 24px 64px; /* Увеличены боковые отступы с 24px до 32px */
+  padding: 24px 64px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -283,7 +378,6 @@ onMounted(fetchDataForSidebar);
 }
 
 .main-column {
-  /* display: grid; */
   grid-template-rows: 2fr 1fr;
   gap: 24px;
   min-height: 0;
@@ -330,4 +424,3 @@ onMounted(fetchDataForSidebar);
   }
 }
 </style>
-```

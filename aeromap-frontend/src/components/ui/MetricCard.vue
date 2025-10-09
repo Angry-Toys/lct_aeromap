@@ -15,7 +15,10 @@
         </div>
 
         <div class="value-group">
-          <p class="value">{{ value ?? '-' }} <span v-if="unit" class="unit-inline">{{ unit }}</span></p>
+          <p class="value">
+            <span v-if="value === null || value === 0">Нет данных</span>
+            <span v-else>{{ value }} <span v-if="unit" class="unit-inline">{{ unit }}</span></span>
+          </p>
           <p class="title">{{ title }}</p>
         </div>
       </div>
@@ -28,11 +31,9 @@
 </template>
 
 <script setup lang="ts">
-// Добавим новый пропс для прогресс-бара.
-// ProgressValue должен быть числом от 0 до 100
 defineProps<{
   title: string;
-  value: number | string | null; // Разрешаем строку для форматирования
+  value: number | string | null;
   isLoading: boolean;
   unit?: string;
   progressValue?: number;
@@ -42,11 +43,8 @@ defineEmits(['card-click']);
 </script>
 
 <style scoped>
-/* ======================== 1. CARD BASE ======================== */
 .metric-card {
-  /* Уменьшаем вертикальный padding с 20px до 16px */
   padding: 16px;
-
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid #333333;
   border-radius: 16px;
@@ -59,16 +57,12 @@ defineEmits(['card-click']);
   box-shadow: 0 0 10px rgba(255, 193, 7, 0.2);
 }
 
-/* ======================== 2. TOP CONTENT (Icon + Text) ======================== */
 .top-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Уменьшаем отступ между верхним блоком и нижним (прогресс-баром) */
-  /* margin-bottom: 10px; */
 }
 
-/* ======================== 3. ICON WRAPPER (без изменений) ======================== */
 .icon-wrapper {
   width: 40px;
   height: 40px;
@@ -81,17 +75,14 @@ defineEmits(['card-click']);
   font-size: 1.2rem;
 }
 
-/* ======================== 4. VALUES ======================== */
 .value-group {
   text-align: right;
 }
 
 .value {
-  /* Уменьшаем font-size */
   font-size: 1.6rem;
   font-weight: 700;
   color: #ffc107;
-  /* Уменьшаем отступ под значением */
   margin: 0 0 2px;
   line-height: 1.1;
 }
@@ -109,13 +100,11 @@ defineEmits(['card-click']);
   white-space: nowrap;
 }
 
-/* ======================== 5. PROGRESS BAR ======================== */
 .progress-bar-wrapper {
   height: 4px;
   background: #1a1a1a;
   border-radius: 4px;
   overflow: hidden;
-  /* Уменьшаем отступ сверху */
   margin-top: 8px;
 }
 
@@ -126,7 +115,6 @@ defineEmits(['card-click']);
   transition: width 0.5s ease;
 }
 
-/* ======================== 6. SKELETON LOADER (корректировка под новые размеры) ======================== */
 .loader-skeleton {
   padding: 4px 0;
 }
@@ -138,24 +126,23 @@ defineEmits(['card-click']);
 .title-line {
   height: 10px;
   width: 60%;
-  margin-bottom: 6px; /* Корректируем отступ */
+  margin-bottom: 6px;
   margin-left: auto;
 }
 .value-line {
-  height: 20px; /* Корректируем высоту */
+  height: 20px;
   width: 80%;
-  margin-bottom: 8px; /* Корректируем отступ */
+  margin-bottom: 8px;
   margin-left: auto;
 }
 .progress-line {
-    height: 4px;
-    width: 100%;
-    margin-top: 6px; /* Корректируем отступ */
+  height: 4px;
+  width: 100%;
+  margin-top: 6px;
 }
 @keyframes loading-pulse {
   0% { opacity: 0.6; }
   50% { opacity: 1; }
   100% { opacity: 0.6; }
 }
-
 </style>
