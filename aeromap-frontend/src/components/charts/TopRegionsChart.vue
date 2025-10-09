@@ -19,9 +19,9 @@ echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, VisualMa
 
 // Типизация для пропсов
 interface Filters {
-  year: string;
-  month: string | null;
-  metric: 'count' | 'avg_duration';
+  from?: string | null;
+  to?: string | null;
+  metric?: 'count' | 'avg_duration';
 }
 
 const props = defineProps<{
@@ -37,9 +37,8 @@ const fetchData = async () => {
   error.value = '';
   try {
     // Форматирование дат для API /api/regions/flights
-    // Используем фильтр по году (игнорируем месяц, т.к. этот эндпоинт не поддерживает месяц)
-    const fromDate = `${props.filters.year}-01-01`;
-    const toDate = `${props.filters.year}-12-31`;
+    const fromDate = props.filters.from || '2025-01-01';
+    const toDate = props.filters.to || '2025-12-31';
 
     const response = await axios.get('http://localhost:5000/api/regions/flights', {
       params: {
@@ -153,6 +152,6 @@ watch(() => props.filters, fetchData, { deep: true, immediate: true });
   z-index: 5;
 }
 .status-loading.error {
-    color: #ff6666;
+    color: #aaaaaa;
 }
 </style>
