@@ -1,58 +1,152 @@
 <template>
-  <div class="metric-card">
-    <div v-if="isLoading" class="loader">...</div>
+  <div class="metric-card" @click="$emit('card-click', title)">
+    <div v-if="isLoading" class="loader-skeleton">
+      <div class="skeleton-line title-line"></div>
+      <div class="skeleton-line value-line"></div>
+      <div class="skeleton-line progress-line"></div>
+    </div>
+
     <template v-else>
-      <p class="title">{{ title }}</p>
-      <h3 class="value">{{ value ?? '-' }} <span v-if="unit">{{ unit }}</span></h3>
+      <div class="top-content">
+        <div class="icon-wrapper">
+          <slot name="icon">
+            <i class="fas fa-chart-line"></i>
+          </slot>
+        </div>
+
+        <div class="value-group">
+          <p class="value">
+            <span v-if="value === null">Нет данных</span>
+            <span v-else>
+              <span v-if="title === 'Рост за период' && typeof value === 'number' && value > 0">+</span>
+              <span v-if="title === 'Рост за период' && typeof value === 'number' && value < 0"></span>
+              {{ value }} <span v-if="unit" class="unit-inline">{{ unit }}</span>
+            </span>
+          </p>
+          <p class="title">{{ title }}</p>
+        </div>
+      </div>
+
+      <div v-if="progressValue !== undefined" class="progress-bar-wrapper">
+        <div class="progress-bar" :style="{ width: progressValue + '%' }"></div>
+      </div>
     </template>
   </div>
 </template>
+
 <script setup lang="ts">
 defineProps<{
   title: string;
-  value: number | null;
+  value: number | string | null;
   isLoading: boolean;
   unit?: string;
+  progressValue?: number;
 }>();
+
+defineEmits(['card-click']);
 </script>
+
 <style scoped>
 .metric-card {
-  background: #0f2346;
-  border: 1px solid #226bcb;
-  border-radius: 12px;
-  padding: 24px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid #333333;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+  border-color: #ffc107;
+  box-shadow: 0 0 10px rgba(255, 193, 7, 0.2);
+}
+
+.top-content {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.icon-wrapper {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
   justify-content: center;
-}
-.title {
-  margin: 0 0 8px;
-  color: #a0c3ff;
-  font-size: 1rem;
-}
-.value {
-  margin: 0;
-  font-size: 2.2rem;
-  font-weight: 700;
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.5) 0%, rgba(180, 100, 0, 0.5) 100%);
   color: #fff;
+  font-size: 1.2rem;
 }
-.unit {
-  font-size: 1rem;
+
+.value-group {
+  text-align: right;
+}
+
+.value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #ffc107;
+  margin: 0 0 2px;
+  line-height: 1.1;
+}
+
+.unit-inline {
+  font-size: 0.8rem;
   font-weight: 400;
-  color: #a0c3ff;
-  margin-left: 4px;
+  color: #aaaaaa;
 }
-.loader-skeleton .skeleton-line {
-  background: #1a325e;
+
+.title {
+  font-size: 0.8rem;
+  color: #aaaaaa;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.progress-bar-wrapper {
+  height: 4px;
+  background: #1a1a1a;
   border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
 }
-.loader-skeleton .title {
-  width: 70%;
-  height: 16px;
-  margin-bottom: 12px;
+
+.progress-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #ffac30 0%, #ffc107 100%);
+  transition: width 0.5s ease;
 }
-.loader-skeleton .value {
-  width: 50%;
-  height: 32px;
+
+.loader-skeleton {
+  padding: 4px 0;
+}
+.skeleton-line {
+  background: #1a1a1a;
+  border-radius: 4px;
+  animation: loading-pulse 1.5s infinite ease-in-out;
+}
+.title-line {
+  height: 10px;
+  width: 60%;
+  margin-bottom: 6px;
+  margin-left: auto;
+}
+.value-line {
+  height: 20px;
+  width: 80%;
+  margin-bottom: 8px;
+  margin-left: auto;
+}
+.progress-line {
+  height: 4px;
+  width: 100%;
+  margin-top: 6px;
+}
+@keyframes loading-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
 }
 </style>

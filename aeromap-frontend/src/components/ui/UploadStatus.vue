@@ -17,9 +17,10 @@
 </template>
 
 <script setup lang="ts">
-import { PropType } from 'vue';
+import type { PropType } from 'vue'; // Тип
+import { watch } from 'vue'; // Значение
 
-// Определяем тип для задачи загрузки
+// Тип для задачи загрузки
 interface UploadTask {
   id: number;
   file: File;
@@ -27,14 +28,14 @@ interface UploadTask {
   status: 'uploading' | 'success' | 'error' | 'timeout';
 }
 
-defineProps({
+const props = defineProps({
   tasks: {
     type: Array as PropType<UploadTask[]>,
     required: true
   }
 });
 
-// Функция для отображения текста статуса
+// Функция для текста статуса
 const getStatusText = (status: UploadTask['status'], progress: number) => {
   switch (status) {
     case 'uploading':
@@ -49,61 +50,97 @@ const getStatusText = (status: UploadTask['status'], progress: number) => {
       return '';
   }
 };
+
+// Автоудаление задач через 10 секунд после завершения
+watch(
+  () => props.tasks,
+  (newTasks) => {
+    newTasks.forEach((task) => {
+      if (task.status === 'success' || task.status === 'error' || task.status === 'timeout') {
+        setTimeout(() => {
+          const taskIndex = props.tasks.findIndex(t => t.id === task.id);
+          if (taskIndex !== -1) {
+            props.tasks.splice(taskIndex, 1);
+          }
+        }, 10000); // 10 секунд
+      }
+    });
+  },
+  { deep: true }
+);
 </script>
 
 <style scoped>
 .upload-status-container {
   position: fixed;
   bottom: 20px;
-  right: 20px;
+  right: 40px;
   width: 350px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   z-index: 2000;
 }
+
 .upload-task {
-  background-color: #0f2346;
-  border: 1px solid #226bcb;
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(17, 17, 17, 0.9));
+  border: 1px solid #333333;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
 }
+
+.upload-task:hover {
+  border-color: #ffc107;
+  box-shadow: 0 6px 20px rgba(255, 193, 7, 0.3);
+}
+
 .task-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
-  color: #fff;
+  color: #ffffff;
 }
+
 .filename {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+  color: #e0e0e0;
 }
+
 .status {
-  font-size: 0.8rem;
-  font-weight: bold;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
-.status.uploading { color: #a0c3ff; }
-.status.success { color: #64faff; }
-.status.error, .status.timeout { color: #ff8e8e; }
+
+.status.uploading { color: #ffc107; }
+.status.success { color: #30e2aa; }
+.status.error, .status.timeout { color: #ff6666; }
 
 .progress-bar-wrapper {
-  width: 100%;
   height: 6px;
-  background-color: #0a1929;
+  background: #1a1a1a;
   border-radius: 3px;
   overflow: hidden;
 }
+
 .progress-bar {
   height: 100%;
-  border-radius: 3px;
   transition: width 0.3s ease;
+  background: linear-gradient(90deg, #ffac30, #ffc107);
 }
-.progress-bar.uploading { background-color: #30ceda; }
-.progress-bar.success { background-color: #64faff; }
-.progress-bar.error, .progress-bar.timeout { background-color: #ff8e8e; }
+
+.progress-bar.success {
+  background: linear-gradient(90deg, #30e2aa, #059669);
+}
+
+.progress-bar.error, .progress-bar.timeout {
+  background: linear-gradient(90deg, #ff6666, #b53b3b);
+}
 </style>
