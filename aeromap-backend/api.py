@@ -278,11 +278,11 @@ def get_metrics():
         where_parts = []
         params = {}
         if year:
-            where_parts.append("f.dep_date::text LIKE :year")
-            params['year'] = f"{year}%"
+            where_parts.append("EXTRACT(YEAR FROM f.dep_date) = :year")
+            params['year'] = int(year)
         if month:
-            where_parts.append("f.dep_date::text LIKE :month")
-            params['month'] = f"%-{month}-%"
+            where_parts.append("EXTRACT(MONTH FROM f.dep_date) = :month")
+            params['month'] = int(month)
         if region:
             where_parts.append("f.region = :region")
             params['region'] = region
@@ -300,7 +300,7 @@ def get_metrics():
             area_km2=('area_km2', 'max')
         ).reset_index()
         metrics_df['flight_density'] = metrics_df['flight_count'] / metrics_df['area_km2']
-        # Peak hourly
+        # Peak hourly с фильтром
         df['dep_datetime'] = pd.to_datetime(df['dep_date'].astype(str) + ' ' + df['dep_time'].astype(str))
         df['hour'] = df['dep_datetime'].dt.floor('H')
         metrics_df['peak_load_hourly'] = df.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
@@ -313,23 +313,36 @@ def get_metrics():
         if month:
             prev_month = int(month) - 1 if int(month) > 1 else 12
             prev_year = year if prev_month != 12 else str(int(year) - 1)
-            prev_params = {'prev_year': f"{prev_year}%", 'prev_month': f"%-{str(prev_month).zfill(2)}-%"}
+            prev_params = {'prev_year': int(prev_year), 'prev_month': prev_month}
             prev_base = """
-                SELECT f.region, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
+                SELECT f.region, COUNT(f.flight_id) as flight_count_prev
                 FROM flights f
                 JOIN metrics m ON f.region = m.region
-                WHERE f.dep_date::text LIKE :prev_year AND f.dep_date::text LIKE :prev_month;
+                WHERE EXTRACT(YEAR FROM f.dep_date) = :prev_year AND EXTRACT(MONTH FROM f.dep_date) = :prev_month
+                GROUP BY f.region;
             """
             with engine.connect() as conn:
                 prev_df = pd.read_sql(text(prev_base), conn, params=prev_params)
             if not prev_df.empty:
-                prev_counts = prev_df.groupby('region')['flight_id'].count().reset_index(name='flight_count_prev')
-                metrics_df = metrics_df.merge(prev_counts, on='region', how='left')
+                metrics_df = metrics_df.merge(prev_df, on='region', how='left')
                 metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev'].fillna(0)) / metrics_df['flight_count_prev'].fillna(1)) * 100
-        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights WHERE dep_time IS NOT NULL GROUP BY hour;"
+        # Hourly distribution с фильтром
+        hourly_query = """
+            SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count
+            FROM flights
+        """
+        hourly_where = []
+        if year:
+            hourly_where.append("EXTRACT(YEAR FROM dep_date) = :year")
+        if month:
+            hourly_where.append("EXTRACT(MONTH FROM dep_date) = :month")
+        if hourly_where:
+            hourly_query += " WHERE " + " AND ".join(hourly_where)
+        hourly_query += " GROUP BY hour;"
         with engine.connect() as conn:
-            hourly_df = pd.read_sql(hourly_query, conn)
+            hourly_df = pd.read_sql(text(hourly_query), conn, params=params)
         metrics_df['hourly_distribution'] = [hourly_df.to_dict(orient='records')] * len(metrics_df)
+        # Zero days
         zero_days_query = """
             SELECT m.region, COUNT(*) as zero_days
             FROM metrics m
@@ -574,5 +587,6 @@ if __name__ == '__main__':
         """))
         conn.commit()
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
