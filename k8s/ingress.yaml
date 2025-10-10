@@ -5,6 +5,7 @@ metadata:
   namespace: aeromap
   annotations:
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"  # Редирект HTTP → HTTPS
+    nginx.ingress.kubernetes.io/proxy-body-size: "1000m"
 spec:
   ingressClassName: nginx
   tls:
