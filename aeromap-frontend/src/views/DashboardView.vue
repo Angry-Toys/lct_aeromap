@@ -71,7 +71,8 @@ interface UploadTask {
   id: number;
   file: File;
   progress: number;
-  status: 'uploading' | 'success' | 'error' | 'timeout';
+  status: 'uploading' | 'processing' | 'success' | 'error' | 'timeout';
+  errorMessage?: string;
 }
 
 // Тип для фильтров
@@ -380,6 +381,10 @@ const executeUpload = async (task: UploadTask) => {
           const taskInArray = uploadTasks.value.find((t) => t.id === task.id);
           if (taskInArray) {
             taskInArray.progress = percentCompleted;
+            // ---> ДОБАВЛЕНО: Изменяем статус на 'processing', когда загрузка завершена
+            if (percentCompleted === 100) {
+              taskInArray.status = 'processing';
+            }
           }
         }
       },
@@ -389,13 +394,20 @@ const executeUpload = async (task: UploadTask) => {
       taskInArray.status = 'success';
       handleFiltersUpdate(activeFilters.value);
     }
-  } catch (error) {
+  }catch (error) {
     const taskInArray = uploadTasks.value.find((t) => t.id === task.id);
     if (taskInArray) {
-      if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
-        taskInArray.status = 'timeout';
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNABORTED') {
+          taskInArray.status = 'timeout';
+        } else {
+          taskInArray.status = 'error';
+          // <-- MODIFIED: Extract and store the error message from the API response
+          taskInArray.errorMessage = error.response?.data?.error || 'Неизвестная ошибка сервера';
+        }
       } else {
-        taskInArray.status = 'error';
+         taskInArray.status = 'error';
+         taskInArray.errorMessage = 'Произошла непредвиденная ошибка';
       }
     }
     console.error('Ошибка при загрузке файла:', error);
