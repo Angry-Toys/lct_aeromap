@@ -11,6 +11,7 @@ from geoalchemy2 import Geometry
 from flask import Flask, jsonify, send_file, make_response, request
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
+from flask import Blueprint
 # from flask_oidc import OpenIDConnect  # Закомментировано для dev
 import matplotlib.pyplot as plt
 import io
@@ -21,6 +22,8 @@ import os
 
 app = Flask(__name__)
 CORS(app, origins=['*'])  # Разрешаем запросы с любого origin для теста
+
+bp = Blueprint('api', __name__, url_prefix='/api')
 
 # Настройка логирования
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=1)
@@ -224,7 +227,7 @@ def get_region(lat, lon, gdf):
     app.logger.warning(f"No region found for {lat}, {lon}")
     return 'Unknown'
 
-@app.route('/api/regions/flights', methods=['GET'])
+@bp.route('/api/regions/flights', methods=['GET'])
 def get_regions_flights():
     try:
         from_str = request.args.get('from')
@@ -261,7 +264,7 @@ def get_regions_flights():
         app.logger.error(f"Error in regions/flights: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/metrics', methods=['GET'])
+@bp.route('/metrics', methods=['GET'])
 def get_metrics():
     try:
         year = request.args.get('year')
@@ -353,7 +356,7 @@ def get_metrics():
         app.logger.error(f"Error in metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/report/graph', methods=['GET'])
+@bp.route('/report/graph', methods=['GET'])
 def get_graph():
     try:
         year = request.args.get('year')
@@ -423,7 +426,7 @@ def get_graph():
         app.logger.error(f"Error in graph: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/upload', methods=['POST'])
+@bp.route('/upload', methods=['POST'])
 def upload_data():
     try:
         if 'file' not in request.files:
@@ -479,7 +482,7 @@ def upload_data():
         app.logger.error(f"Error in upload: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/webhook', methods=['POST'])
+@bp.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.json
@@ -513,7 +516,7 @@ def webhook():
         return jsonify({"error": str(e)}), 500
 
 # Эндпоинт для экспорта полного отчета JSON
-@app.route('/report/export', methods=['GET'])
+@bp.route('/report/export', methods=['GET'])
 def export_report():
     try:
         with engine.connect() as conn:
@@ -536,6 +539,8 @@ def export_report():
     except Exception as e:
         app.logger.error(f"Error in export: {str(e)}")
         return jsonify({"error": str(e)}), 500
+        
+app.register_blueprint(bp)
 
 if __name__ == '__main__':
     with engine.connect() as conn:
@@ -569,4 +574,5 @@ if __name__ == '__main__':
         """))
         conn.commit()
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
