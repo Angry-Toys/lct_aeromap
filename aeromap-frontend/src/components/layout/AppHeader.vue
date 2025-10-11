@@ -10,7 +10,7 @@
 
     <div class="actions">
 
-      <button class="btn action-btn purple-btn">
+      <button class="btn action-btn purple-btn" @click="$emit('generate-png')">
         <i class="fas fa-chart-bar icon mr-2"></i>
         Generate PNG
       </button>

@@ -1,12 +1,12 @@
 <template>
   <div class="dashboard-layout">
-    <AppHeader @upload-clicked="isModalVisible = true" @export-json="handleExportJson" />
+    <AppHeader @upload-clicked="isModalVisible = true" @export-json="handleExportJson" @generate-png="isExportModalVisible = true"/>
 
     <main class="dashboard-content">
       <DashboardFilters @filters-updated="handleFiltersUpdate" />
       <SelectedParams :filters="activeFilters" :selectedRegion="selectedRegion" :missingMonths="missingMonths" />
 
-      <div class="metrics-row">
+      <div class="metrics-row" ref="metricsRowRef">
         <MetricCard title="Всего полётов" :value="metrics.totalFlights" :is-loading="isLoadingMetrics" />
         <MetricCard title="Средняя длительность" :value="metrics.avgDuration" :is-loading="isLoadingMetrics" unit="мин." />
         <MetricCard
@@ -24,17 +24,23 @@
       <div class="dashboard-grid">
         <div class="main-column">
           <MapOverview
+            ref="mapOverviewRef"
             :key="componentKey"
             :filters="activeFilters"
             @region-selected="handleRegionSelected"
           />
           <div class="charts-row">
-            <TopRegionsChart :key="componentKey + 1" :filters="activeFilters" />
-            <HourlyActivityChart :data="metrics.hourlyDistribution" :is-loading="isLoadingMetrics" />
+            <TopRegionsChart ref="topRegionsChartRef" :key="componentKey + 1" :filters="activeFilters" />
+            <HourlyActivityChart ref="hourlyActivityChartRef" :data="metrics.hourlyDistribution" :is-loading="isLoadingMetrics" />
           </div>
         </div>
       </div>
     </main>
+    <ExportModal
+        :visible="isExportModalVisible"
+        @close="isExportModalVisible = false"
+        @generate="handleGenerateReport"
+      />
 
     <UploadModal
       v-if="isModalVisible"
@@ -51,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, reactive, nextTick  } from 'vue';
 import axios from 'axios';
 
 // Импорты всех компонентов
@@ -65,6 +71,8 @@ import MetricCard from '../components/ui/MetricCard.vue';
 import UploadModal from '../components/ui/UploadModal.vue';
 import UploadStatus from '../components/ui/UploadStatus.vue';
 import GrowthChartModal from '../components/ui/GrowthChartModal.vue';
+import ExportModal from '../components/ui/ExportModal.vue'; // Импортируем модалку
+import html2canvas from 'html2canvas'; // Библиотека для скриншота метрик
 
 // Определяем тип для задачи загрузки
 interface UploadTask {
@@ -96,6 +104,125 @@ const selectedRegion = ref<string>('Russian Federation');
 const missingMonths = ref<string[]>([]);
 const showGrowthModal = ref(false);
 const growthPercentData = ref<GrowthData[]>([]);
+
+
+const metricsRowRef = ref<HTMLElement | null>(null);
+const mapOverviewRef = ref(null);
+const topRegionsChartRef = ref(null);
+const hourlyActivityChartRef = ref(null);
+
+
+const isExportModalVisible = ref(false);
+const handleGenerateReport = async (selectedIds: string[]) => {
+  if (selectedIds.length === 0) {
+    alert("Пожалуйста, выберите хотя бы один элемент для экспорта.");
+    return;
+  }
+
+  const padding = 80;
+  const gap = 40;
+  const qualityScale = 2;
+  const capturedImages = [];
+
+  const elementRefs = {
+    metrics: metricsRowRef,
+    map: mapOverviewRef,
+    topRegions: topRegionsChartRef,
+    hourlyActivity: hourlyActivityChartRef,
+  };
+
+  for (const id of selectedIds) {
+    const componentRef = elementRefs[id as keyof typeof elementRefs];
+    if (componentRef.value) {
+      const elementToCapture = (componentRef.value as any).$el || componentRef.value;
+
+      const canvas = await html2canvas(elementToCapture, {
+        scale: qualityScale,
+        backgroundColor: null, // Оставляем null, так как фон задаем ниже
+        useCORS: true,
+        logging: false,
+        ignoreElements: (element) => element.hasAttribute('data-html2canvas-ignore'),
+
+        // --- РЕШЕНИЕ ПРОБЛЕМЫ С ТУСКЛОСТЬЮ ---
+        onclone: (documentClone) => {
+          // Находим склонированный элемент метрик и принудительно
+          // делаем его фон сплошным черным для корректного рендеринга.
+          // Это не влияет на оригинальный элемент на странице.
+          if (id === 'metrics') {
+            const clonedElement = documentClone.querySelector('.metrics-row');
+            if (clonedElement) {
+              (clonedElement as HTMLElement).style.backgroundColor = '#000000';
+            }
+          }
+        },
+      });
+
+      capturedImages.push({
+        id,
+        src: canvas.toDataURL('image/png'),
+        width: canvas.width,
+        height: canvas.height,
+      });
+    }
+  }
+
+  // --- Блок расчета размеров и отрисовки (без изменений) ---
+  const metricsImage = capturedImages.find(img => img.id === 'metrics');
+  const mapImage = capturedImages.find(img => img.id === 'map');
+  const smallCharts = capturedImages.filter(img => !['metrics', 'map'].includes(img.id));
+  const smallChartsWidth = smallCharts.reduce((sum, img) => sum + img.width, 0) + (smallCharts.length > 1 ? gap : 0);
+  const canvasWidth = padding * 2 + Math.max(metricsImage?.width ?? 0, mapImage?.width ?? 0, smallChartsWidth);
+  let canvasHeight = padding;
+  if (metricsImage) canvasHeight += metricsImage.height + gap;
+  if (mapImage) canvasHeight += mapImage.height + gap;
+  if (smallCharts.length > 0) canvasHeight += (smallCharts[0]?.height ?? 0);
+  canvasHeight = (canvasHeight - gap) + padding;
+
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = canvasWidth;
+  finalCanvas.height = canvasHeight;
+  const ctx = finalCanvas.getContext('2d')!;
+
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+  let currentY = padding;
+  const drawCentered = async (image: any) => {
+    if (!image) return;
+    const img = await loadImage(image.src);
+    const x = (canvasWidth - image.width) / 2;
+    ctx.drawImage(img, x, currentY, image.width, image.height);
+    currentY += image.height + gap;
+  };
+
+  await drawCentered(metricsImage);
+  await drawCentered(mapImage);
+
+  if (smallCharts.length > 0) {
+    let currentX = (canvasWidth - smallChartsWidth) / 2;
+    for (const chart of smallCharts) {
+      const img = await loadImage(chart.src);
+      ctx.drawImage(img, currentX, currentY, chart.width, chart.height);
+      currentX += chart.width + gap;
+    }
+  }
+
+  const link = document.createElement('a');
+  link.download = `aeromap-report-${new Date().toISOString().split('T')[0]}.png`;
+  link.href = finalCanvas.toDataURL('image/png');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const loadImage = (src: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.src = src;
+  });
+};
+
 
 const handleRegionSelected = (region: string) => {
   console.log('Region selected:', region);

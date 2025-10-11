@@ -2,7 +2,7 @@
   <div class="chart-container">
     <div v-if="isLoading" class="status-loading">Загрузка данных об активности...</div>
     <div v-else-if="!props.data" class="status-loading">Нет данных для отображения</div>
-    <v-chart v-else-if="chartOption" :option="chartOption" autoresize />
+    <v-chart ref="chartRef" v-else-if="chartOption" :option="chartOption" autoresize />
   </div>
 </template>
 
@@ -36,6 +36,7 @@ interface HourlyDataPoint {
     count: number;
 }
 
+const chartRef = ref(null); // Добавляем ref для чарта
 const props = defineProps<{
     data: HourlyDataPoint[] | null;
     isLoading: boolean;
@@ -110,7 +111,13 @@ const updateChart = () => {
 };
 
 watch(() => props.data, updateChart, { immediate: true });
+
+defineExpose({
+  getEChartsInstance: () => chartRef.value ? echarts.getInstanceByDom(chartRef.value.$el) : null
+});
+
 </script>
+
 
 <style scoped>
 .chart-container {

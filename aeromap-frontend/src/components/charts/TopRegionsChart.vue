@@ -2,7 +2,7 @@
   <div class="chart-container">
     <div v-if="isLoading" class="status-loading">Загрузка данных по регионам...</div>
     <div v-else-if="error" class="status-loading error">{{ error }}</div>
-    <v-chart v-else :option="chartOption" autoresize />
+    <v-chart ref="chartRef" v-else :option="chartOption" autoresize />
   </div>
 </template>
 
@@ -28,9 +28,14 @@ const props = defineProps<{
   filters: Filters;
 }>();
 
+const chartRef = ref(null); // Добавляем ref для чарта
 const isLoading = ref(true);
 const error = ref('');
 const chartOption = ref({});
+
+defineExpose({
+  getEChartsInstance: () => chartRef.value ? echarts.getInstanceByDom(chartRef.value.$el) : null
+});
 
 const fetchData = async () => {
   isLoading.value = true;
