@@ -1,6 +1,6 @@
 <template>
   <div class="dashboard-layout">
-    <AppHeader @upload-clicked="isModalVisible = true" />
+    <AppHeader @upload-clicked="isModalVisible = true" @export-json="handleExportJson" />
 
     <main class="dashboard-content">
       <DashboardFilters @filters-updated="handleFiltersUpdate" />
@@ -413,6 +413,37 @@ const executeUpload = async (task: UploadTask) => {
     console.error('Ошибка при загрузке файла:', error);
   }
 };
+
+// --- НОВАЯ ФУНКЦИЯ: Обработка экспорта JSON ---
+const handleExportJson = async () => {
+  try {
+    // Показываем индикатор загрузки (можно добавить глобальный loader, как в isLoadingMetrics)
+    isLoadingMetrics.value = true; // Переиспользуем для блокировки UI
+
+    const response = await axios.get('/api/report/export', {
+      responseType: 'blob' // Для скачивания файла как blob
+    });
+
+    // Создаем URL для blob и скачиваем
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'full_report.json');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    // Успех: Можно показать toast или в UploadStatus добавить 'success' для экспорта
+    console.log('JSON экспортирован успешно');
+  } catch (error) {
+    console.error('Ошибка экспорта JSON:', error);
+    // Ошибка: Показать в UI (alert или модалка в стиле сайта)
+    alert('Ошибка при экспорте JSON. Проверьте сервер или связь.');
+  } finally {
+    isLoadingMetrics.value = false;
+  }
+};
+
 
 // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
 const handleFiltersUpdate = (filters: Filters) => {

@@ -15,7 +15,7 @@
         Generate PNG
       </button>
 
-      <button class="btn action-btn green-btn">
+      <button class="btn action-btn green-btn" @click="$emit('export-json')">
         <i class="fas fa-file-export icon mr-2"></i>
         Export JSON
       </button>
@@ -35,7 +35,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 // Определяем, что компонент может испускать событие 'upload-clicked'
-defineEmits(['upload-clicked']);
+defineEmits(['upload-clicked', 'export-json', 'generate-png']);
 
 const router = useRouter();
 
