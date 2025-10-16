@@ -54,6 +54,7 @@ defineEmits(['card-click']);
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.3s ease;
+
 }
 
 .metric-card:hover {
@@ -65,6 +66,7 @@ defineEmits(['card-click']);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 56px;
 }
 
 .icon-wrapper {

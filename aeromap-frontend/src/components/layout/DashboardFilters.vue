@@ -320,8 +320,13 @@ onMounted(() => {
   border: none;
   background: transparent;
   color: #9ca3af; /* text-gray-400 */
+  transition: color 0.3s ease;
   position: relative;
   z-index: 2;
+}
+
+.mode-btn:hover {
+  color: #ffffff;
 }
 
 .mode-btn.mode-active {

@@ -117,7 +117,7 @@ const chartOption = computed(() => ({
   width: 100%;
   max-height: 80vh;
   overflow-y: auto;
-  animation: fadeInScale 0.3s ease-out forwards;
+  animation: fadeInScale 0.1s ease-out forwards;
 }
 
 .modal-header {

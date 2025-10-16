@@ -90,6 +90,8 @@ const startUpload = () => {
   width: 90%;
   max-width: 500px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  animation: fadeInScale 0.1s ease-out forwards;
 }
 .modal-title {
   margin: 0 0 8px;
@@ -184,5 +186,16 @@ const startUpload = () => {
 }
 .btn.secondary:hover {
   background-color: #333;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 </style>

@@ -93,6 +93,7 @@ const formattedMissingRange = computed(() => {
 .selected-params {
   margin: 16px 0;
   width: 100%;
+
 }
 
 .params-content {
@@ -104,6 +105,7 @@ const formattedMissingRange = computed(() => {
   justify-content: space-between;
   align-items: center;
   box-sizing: border-box;
+  min-height: 110px;
 }
 
 .region-group {

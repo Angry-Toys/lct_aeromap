@@ -100,18 +100,19 @@ const generateReport = () => {
   justify-content: center;
   align-items: center;
   z-index: 1000;
-  /* Правильный блюр, как в UploadModal */
-  backdrop-filter: blur(5px);
-  background-color: rgba(0, 0, 0, 0.5); /* Добавим легкое затемнение */
+  backdrop-filter: blur(8px);
+  background-color: rgba(0, 0, 0, 0.7); /* Добавим легкое затемнение */
 }
 
 .modal-content {
-  background-color: rgba(13, 13, 13, 0.9);
-  border: 1px solid #333;
+  background-color: rgba(17, 17, 17, 0.8);
+  border: 1px solid rgba(50, 50, 50, 0.5);
   border-radius: 16px;
   width: 500px;
   padding: 32px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  animation: fadeInScale 0.1s ease-out forwards;
 }
 
 .modal-title, .modal-subtitle, .modal-actions {
@@ -123,13 +124,19 @@ const generateReport = () => {
 .modal-actions { margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; }
 
 /* --- 2. ИСПРАВЛЕННЫЕ СТИЛИ КНОПОК --- */
-.btn { padding: 10px 24px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
-.cancel-btn {
-  background-color: #2a2a2a;
-  color: #e0e0e0; /* Правильный, более яркий белый цвет текста */
-  border: 1px solid #444;
+.btn {   padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
-.cancel-btn:hover { background-color: #383838; border-color: #555; }
+.cancel-btn {
+  color: #e0e0e0;
+  background-color: #2a2a2a;
+}
+.cancel-btn:hover {   background-color: #333; }
 .export-btn { background: linear-gradient(to right, #6d28d9, #4f46e5); color: white; box-shadow: 0 4px 15px rgba(109, 40, 217, 0.3); }
 .export-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(109, 40, 217, 0.4); }
 
@@ -185,4 +192,16 @@ const generateReport = () => {
 }
 
 .checkbox-text { color: #d1d5db; font-size: 0.95rem; font-weight: 500; }
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 </style>
