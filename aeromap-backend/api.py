@@ -19,36 +19,38 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
 app = Flask(__name__)
-CORS(app, origins=['*'])  # Разрешаем запросы с любого origin для теста
+CORS(app, origins=['*'])  
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
-# Настройка логирования
+
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=1)
 handler.setLevel(logging.INFO)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
 
-# DB_URL из env (для Docker) или fallback localhost
+
 DB_URL = os.getenv('DB_URL', 'postgresql://aviation_user:aviation_pass@localhost:5432/aviation_db')
 engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=3600)
 SHAPEFILE_PATH = 'shapefiles/RF.shp'
 
-# Swagger UI
+
 SWAGGER_URL = '/swagger'
 API_URL = '/static/swagger.json'
 swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "БПЛА Анализ"})
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
-# Функции парсинга
+
 def parse_coords(coord_str):
     if not coord_str:
         return None, None
     coord_str = str(coord_str).upper().replace(' ', '').replace('С', 'N').replace('В', 'E').replace('C', 'N')
     try:
-        # Основной паттерн
+       
         match = re.match(r'(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])', coord_str)
         if match:
             lat_deg = int(match.group(1))
@@ -58,7 +60,7 @@ def parse_coords(coord_str):
             lon_min = int(match.group(5))
             lon_dir = match.group(6)
             if not (0 <= lat_deg <= 90 and 0 <= lat_min < 60 and 0 <= lon_deg <= 180 and 0 <= lon_min < 60):
-                return None, None  # Валидация диапазонов
+                return None, None  
             lat = lat_deg + lat_min / 60.0
             if lat_dir == 'S':
                 lat = -lat
@@ -66,7 +68,7 @@ def parse_coords(coord_str):
             if lon_dir == 'W':
                 lon = -lon
             return lat, lon
-        # С секундами
+
         match_ss = re.match(r'(\d{2})(\d{2})(\d{2})([NS])(\d{3})(\d{2})(\d{2})([EW])', coord_str)
         if match_ss:
             lat_deg = int(match_ss.group(1))
@@ -86,9 +88,9 @@ def parse_coords(coord_str):
             if lon_dir == 'W':
                 lon = -lon
             return lat, lon
-        # Для ZONA с несколькими точками — берём первую
+
         if 'ZONA' in coord_str:
-            coord_matches = re.findall(r'(\d{4}[NS]\d{5}[EW])', coord_str)  # Улучшил для捕ture полных coords
+            coord_matches = re.findall(r'(\d{4}[NS]\d{5}[EW])', coord_str) 
             if coord_matches:
                 return parse_coords(coord_matches[0])
     except ValueError:
@@ -132,7 +134,7 @@ def parse_flight_row(row_str):
         return None
     try:
         row_str = re.sub(r'row\d+:\s*', '', row_str).strip().replace('\n', ' ')
-        app.logger.debug(f"Parsing row: {row_str[:100]}...")  # Дебаг для первых 100 символов
+        app.logger.debug(f"Parsing row: {row_str[:100]}...") 
         center_match = re.match(r'(.*?)\s*\(', row_str)
         center = center_match.group(1).strip() if center_match else ''
         shr_full = row_str[center_match.end()-1:] if center_match else row_str
@@ -147,7 +149,7 @@ def parse_flight_row(row_str):
         flight_type = typ_match.group(1) if typ_match else None
         customer_match = re.search(r'OPR/(.*?)( TYP/| RMK/| STS/| REG/| DEST/| $)', shr_section, re.DOTALL)
         customer = customer_match.group(1).strip() if customer_match else None
-        operator = customer  # Для "кто заказывал для оператора" — предполагаем совпадение или derive
+        operator = customer  
         dof_match = re.search(r'DOF/(\d{6})', shr_section)
         dof_date = parse_date(dof_match.group(1)) if dof_match else None
         dep_coord_str = re.search(r'DEP/([\dNS EWСВ\d]+)', shr_section).group(1) if re.search(r'DEP/([\dNS EWСВ\d]+)', shr_section) else ''
@@ -286,14 +288,13 @@ def webhook():
         app.logger.error(f"Error in webhook: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Эндпоинт для экспорта полного отчета JSON
 @bp.route('/report/export', methods=['GET'])
 def export_report():
     try:
         with engine.connect() as conn:
             flights_df = pd.read_sql("SELECT * FROM flights;", conn)
             metrics_df = pd.read_sql("SELECT * FROM metrics;", conn)
-        # Фикс: convert date to str, time to 'HH:MM:SS'
+
         flights_df['dep_date'] = flights_df['dep_date'].astype(str)
         flights_df['arr_date'] = flights_df['arr_date'].astype(str)
         flights_df['dep_time'] = flights_df['dep_time'].apply(lambda x: x.strftime('%H:%M:%S') if pd.notnull(x) else None)
@@ -311,7 +312,6 @@ def export_report():
         app.logger.error(f"Error in export: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Новые эндпоинты для аналитики
 @bp.route('/metrics', methods=['GET'])
 def get_metrics():
     try:
@@ -432,7 +432,7 @@ def get_flights_coords():
         year = request.args.get('year')
         month = request.args.get('month')
         region = request.args.get('region')
-        limit = int(request.args.get('limit', 5000))  # Default limit для производительности
+        limit = int(request.args.get('limit', 5000))
         sql = """
             SELECT dep_lat AS lat, dep_lon AS lon, 
                    COALESCE(duration_min, 1) AS intensity 
@@ -495,6 +495,104 @@ def get_regions_flights():
         return response
     except Exception as e:
         app.logger.error(f"Error in regions/flights: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route('/compare', methods=['GET'])
+def compare_periods():
+    try:
+        year1 = request.args.get('year1')
+        month1 = request.args.get('month1')
+        year2 = request.args.get('year2')
+        month2 = request.args.get('month2')
+        metric = request.args.get('metric', 'count')  
+
+        if not (year1 and year2):
+            return jsonify({"error": "Required: year1 and year2"}), 400
+        if metric not in ['count', 'avg_duration']:
+            return jsonify({"error": "Invalid metric (count or avg_duration)"}), 400
+
+        sql_base = "SELECT flight_id, duration_min FROM flights WHERE EXTRACT(YEAR FROM dep_date) = :year"
+        params1 = {'year': int(year1)}
+        params2 = {'year': int(year2)}
+
+        if month1:
+            sql_base += " AND EXTRACT(MONTH FROM dep_date) = :month"
+            params1['month'] = int(month1)
+        if month2:
+            sql_base += " AND EXTRACT(MONTH FROM dep_date) = :month"
+            params2['month'] = int(month2)
+
+        with engine.connect() as conn:
+            df1 = pd.read_sql(text(sql_base), conn, params=params1)
+            df2 = pd.read_sql(text(sql_base), conn, params=params2)
+
+        if metric == 'count':
+            val1 = len(df1)
+            val2 = len(df2)
+        else:  
+            val1 = df1['duration_min'].mean() if not df1.empty else 0
+            val2 = df2['duration_min'].mean() if not df2.empty else 0
+
+        diff_percent = ((val2 - val1) / val1 * 100) if val1 > 0 else None
+
+        period1_label = f"{year1}-{month1:02d}" if month1 else year1
+        period2_label = f"{year2}-{month2:02d}" if month2 else year2
+
+        return jsonify({
+            period1_label: {"value": val1},
+            period2_label: {"value": val2},
+            "diff_percent": diff_percent
+        }), 200
+    except Exception as e:
+        app.logger.error(f"Error in compare: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/forecast', methods=['GET'])
+def forecast_period():
+    try:
+        year = int(request.args.get('year', 2025))
+        month = request.args.get('month')  
+        metric = request.args.get('metric', 'count')  
+
+        if metric not in ['count', 'avg_duration']:
+            return jsonify({"error": "Invalid metric (count or avg_duration)"}), 400
+
+        sql = """
+            SELECT EXTRACT(MONTH FROM dep_date) AS month, flight_id, duration_min 
+            FROM flights 
+            WHERE EXTRACT(YEAR FROM dep_date) = :year AND dep_date <= CURRENT_DATE
+            GROUP BY month, flight_id, duration_min
+        """
+        with engine.connect() as conn:
+            df = pd.read_sql(text(sql), conn, params={'year': year})
+
+        if df.empty:
+            return jsonify({"error": "No historical data for forecast"}), 404
+
+        if metric == 'count':
+            monthly = df.groupby('month').size().reset_index(name='value')
+        else:
+            monthly = df.groupby('month')['duration_min'].mean().reset_index(name='value')
+
+        X = np.array(monthly['month']).reshape(-1, 1)
+        y = monthly['value']
+        model = LinearRegression()
+        model.fit(X, y)
+
+        if month:  
+            pred_month = int(month)
+            if pred_month <= max(monthly['month']):
+                return jsonify({"error": "Month already passed, use actual data"}), 400
+            pred = model.predict([[pred_month]])[0]
+            return jsonify({f"{year}-{pred_month:02d}": {"predicted_value": pred}}), 200
+        else:  
+            current_max_month = max(monthly['month'])
+            remaining_months = range(int(current_max_month) + 1, 13)
+            preds = [model.predict([[m]])[0] for m in remaining_months]
+            total_pred = monthly['value'].sum() + sum(preds)
+            return jsonify({str(year): {"predicted_total": total_pred}}), 200
+    except Exception as e:
+        app.logger.error(f"Error in forecast: {str(e)}")
         return jsonify({"error": str(e)}), 500
         
 app.register_blueprint(bp)
