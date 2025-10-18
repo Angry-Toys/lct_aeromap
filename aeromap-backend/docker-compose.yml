@@ -11,6 +11,17 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  keycloak:  # Новый сервис для Keycloak (опционально, для локального теста)
+    image: quay.io/keycloak/keycloak:25.0
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    command: start-dev
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+
   app:
     build: .
     restart: always
@@ -18,8 +29,14 @@ services:
       - "5000:5000"
     depends_on:
       - db
+      - keycloak  # Добавьте, если используете локальный Keycloak
     environment:
       DB_URL: postgresql://aviation_user:aviation_pass@db:5432/aviation_db
+      OIDC_CLIENT_ID: aviation-api  # Из Keycloak client
+      OIDC_CLIENT_SECRET: 2vFokEuOQQWUkTxx5fSsppZhwV9enWHU  # Из Keycloak
+      OIDC_ISSUER: http://keycloak:8080/realms/aviation-realm  # Или внешний URL, e.g., https://your-keycloak/auth/realms/your-realm
+      SECRET_KEY: your-secret-key  # Генерируйте сильный ключ, e.g., python -c 'import secrets; print(secrets.token_hex(16))'
 
 volumes:
   pgdata:
+  keycloak_data:  # Для persistence Keycloak

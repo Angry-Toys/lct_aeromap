@@ -1,4 +1,4 @@
-import six  # Для совместимости
+import six 
 import re
 from datetime import datetime, timedelta
 import pandas as pd
@@ -8,11 +8,11 @@ from shapely.geometry import Point
 from fiona import Env
 from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
-from flask import Flask, jsonify, send_file, make_response, request
+from flask import Flask, jsonify, send_file, make_response, request, redirect
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
 from flask import Blueprint
-# from flask_oidc import OpenIDConnect  # Закомментировано для dev
+from flask_oidc import OpenIDConnect 
 import matplotlib.pyplot as plt
 import io
 import json
@@ -23,7 +23,31 @@ from sklearn.linear_model import LinearRegression
 import numpy as np
 
 app = Flask(__name__)
-CORS(app, origins=['*'])  
+CORS(app, origins=['*']) 
+
+app.config.update({
+    'OIDC_CLIENT_SECRETS': {  
+        'web': {
+            'client_id': os.getenv('OIDC_CLIENT_ID', 'your-client-id'),
+            'client_secret': os.getenv('OIDC_CLIENT_SECRET', 'your-secret'),
+            'issuer': os.getenv('OIDC_ISSUER', 'https://your-keycloak/auth/realms/your-realm'),
+            'auth_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/auth',
+            'token_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/token',
+            'userinfo_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/userinfo',
+            'redirect_uris': ['http://localhost:5000/oidc_callback'],  
+            'post_logout_redirect_uris': ['http://localhost:5000/'],
+        }
+    },
+    'OIDC_COOKIE_SECURE': False, 
+    'OIDC_USER_INFO_ENABLED': True,
+    'OIDC_OPENID_REALM': 'your-realm',
+    'OIDC_SCOPES': ['openid', 'email', 'profile'],
+    'OIDC_INTROSPECTION_AUTH_METHOD': 'client_secret_post',
+    'OVERWRITE_REDIRECT_URI': 'http://localhost:5000/oidc_callback',  
+    'SECRET_KEY': os.getenv('SECRET_KEY', 'your-secret-key')  
+})
+
+oidc = OpenIDConnect(app)
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -201,6 +225,7 @@ def get_region(lat, lon, gdf):
     return None
 
 @bp.route('/upload', methods=['POST'])
+@oidc.accept_token(require_token=True)
 def upload_file():
     try:
         if 'file' not in request.files:
@@ -256,6 +281,7 @@ def upload_file():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/webhook', methods=['POST'])
+@oidc.accept_token(require_token=True)
 def webhook():
     try:
         data = request.json
@@ -289,6 +315,7 @@ def webhook():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/report/export', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def export_report():
     try:
         with engine.connect() as conn:
@@ -313,6 +340,7 @@ def export_report():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def get_metrics():
     try:
         year = request.args.get('year')
@@ -352,7 +380,9 @@ def get_metrics():
     except Exception as e:
         app.logger.error(f"Error in metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
+    
 @bp.route('/metrics/operators', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def get_operators_metrics():
     try:
         with engine.connect() as conn:
@@ -370,6 +400,7 @@ def get_operators_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/types', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def get_types_metrics():
     try:
         with engine.connect() as conn:
@@ -387,6 +418,7 @@ def get_types_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/total', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def get_total_metrics():
     try:
         with engine.connect() as conn:
@@ -409,6 +441,7 @@ def get_total_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/customers', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def get_customers_metrics():
     try:
         with engine.connect() as conn:
@@ -427,6 +460,7 @@ def get_customers_metrics():
         return jsonify({"error": str(e)}), 500
     
 @bp.route('/flights/coords', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def get_flights_coords():
     try:
         year = request.args.get('year')
@@ -461,6 +495,7 @@ def get_flights_coords():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/regions/flights', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def get_regions_flights():
     try:
         from_str = request.args.get('from')
@@ -498,6 +533,7 @@ def get_regions_flights():
         return jsonify({"error": str(e)}), 500
     
 @bp.route('/compare', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def compare_periods():
     try:
         year1 = request.args.get('year1')
@@ -548,6 +584,7 @@ def compare_periods():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/forecast', methods=['GET'])
+@oidc.accept_token(require_token=True)
 def forecast_period():
     try:
         year = int(request.args.get('year', 2025))
@@ -594,6 +631,20 @@ def forecast_period():
     except Exception as e:
         app.logger.error(f"Error in forecast: {str(e)}")
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/auth/login')
+def login():
+    return oidc.redirect_to_auth_server()
+
+@app.route('/oidc_callback')
+@oidc.require_login
+def oidc_callback():
+    return redirect('/') 
+
+@app.route('/auth/logout')
+def logout():
+    oidc.logout()
+    return redirect('/')
         
 app.register_blueprint(bp)
 
