@@ -284,6 +284,9 @@ const getMonthsInRange = (from: string, to: string) => {
   return months;
 };
 
+// Функция для получения количества дней в месяце
+const daysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+
 const fetchDataForSidebar = async () => {
   isLoadingMetrics.value = true;
   try {
@@ -345,6 +348,7 @@ const fetchDataForSidebar = async () => {
     });
 
     const monthResponses = await Promise.all(promises);
+    const numDataMonths = monthResponses.filter(({ data }) => data.length > 0).length;
     const allRegionsData = monthResponses.flatMap(response => response.data);
     console.log('📥 Все данные по регионам:', { count: allRegionsData.length, data: allRegionsData });
 
@@ -417,6 +421,12 @@ const fetchDataForSidebar = async () => {
       });
     });
 
+    // Добавляем нулевые дни для пропущенных месяцев (предполагаем, что отсутствие данных = нулевые полеты за весь месяц)
+    missingMonths.value.forEach(missing => {
+      const [year, monthStr] = missing.split('-').map(Number);
+      totals.zeroDays += daysInMonth(year, monthStr);
+    });
+
     // Ограничиваем zeroDays числом дней в периоде
     const startDate = new Date(from);
     const endDate = new Date(to);
@@ -452,10 +462,10 @@ const fetchDataForSidebar = async () => {
       ? parseFloat((totals.flightDensityList.reduce((a, b) => a + b, 0) / totals.flightDensityList.length).toFixed(4))
       : 0;
 
-    // Среднесуточная hourly динамика
+    // Среднемесячная hourly динамика
     const hourlyDistributionTemp = totals.hourlySums.map((sumCount, hour) => ({
       hour,
-      count: totalDays > 0 ? Math.round(sumCount / totalDays) : 0,
+      count: numDataMonths > 0 ? Math.round(sumCount / numDataMonths) : 0,
     }));
     metrics.hourlyDistribution = totals.hourlySums.every(c => c === 0) ? null : hourlyDistributionTemp;
 
