@@ -23,7 +23,7 @@ from sklearn.linear_model import LinearRegression
 import numpy as np
 
 app = Flask(__name__)
-CORS(app, origins=['*']) 
+CORS(app, origins=['*'])  
 
 app.config.update({
     'OIDC_CLIENT_SECRETS': {  
@@ -225,7 +225,6 @@ def get_region(lat, lon, gdf):
     return None
 
 @bp.route('/upload', methods=['POST'])
-@oidc.accept_token(require_token=True)
 def upload_file():
     try:
         if 'file' not in request.files:
@@ -340,7 +339,6 @@ def export_report():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def get_metrics():
     try:
         year = request.args.get('year')
@@ -380,9 +378,7 @@ def get_metrics():
     except Exception as e:
         app.logger.error(f"Error in metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
 @bp.route('/metrics/operators', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def get_operators_metrics():
     try:
         with engine.connect() as conn:
@@ -400,7 +396,6 @@ def get_operators_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/types', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def get_types_metrics():
     try:
         with engine.connect() as conn:
@@ -418,7 +413,6 @@ def get_types_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/total', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def get_total_metrics():
     try:
         with engine.connect() as conn:
@@ -441,7 +435,6 @@ def get_total_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/customers', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def get_customers_metrics():
     try:
         with engine.connect() as conn:
@@ -460,7 +453,6 @@ def get_customers_metrics():
         return jsonify({"error": str(e)}), 500
     
 @bp.route('/flights/coords', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def get_flights_coords():
     try:
         year = request.args.get('year')
@@ -495,7 +487,6 @@ def get_flights_coords():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/regions/flights', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def get_regions_flights():
     try:
         from_str = request.args.get('from')
@@ -533,7 +524,6 @@ def get_regions_flights():
         return jsonify({"error": str(e)}), 500
     
 @bp.route('/compare', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def compare_periods():
     try:
         year1 = request.args.get('year1')
@@ -584,7 +574,6 @@ def compare_periods():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/forecast', methods=['GET'])
-@oidc.accept_token(require_token=True)
 def forecast_period():
     try:
         year = int(request.args.get('year', 2025))
@@ -631,20 +620,6 @@ def forecast_period():
     except Exception as e:
         app.logger.error(f"Error in forecast: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
-@app.route('/auth/login')
-def login():
-    return oidc.redirect_to_auth_server()
-
-@app.route('/oidc_callback')
-@oidc.require_login
-def oidc_callback():
-    return redirect('/') 
-
-@app.route('/auth/logout')
-def logout():
-    oidc.logout()
-    return redirect('/')
         
 app.register_blueprint(bp)
 
