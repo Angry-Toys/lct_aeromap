@@ -65,6 +65,26 @@ echarts.use([
   ScatterChart
 ]);
 
+
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  return function executedFunction(...args: Parameters<T>) {
+    const later = () => {
+      timeout = null;
+      func(...args);
+    };
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(later, wait);
+  };
+}
+
+
 const isLoading = ref(false);
 const isMapReady = ref(false);
 const errorMessage = ref('');
@@ -134,8 +154,12 @@ const randomPointInPolygon = (polygon: any): [number, number] => {
   return point;
 };
 
+const getEChartsInstance = () => {  // ДОБАВЛЕНО: Выносим функцию как const для внутреннего использования
+  return chartRef.value?.$el ? echarts.getInstanceByDom(chartRef.value.$el) : null;
+};
+
 defineExpose({
-  getEChartsInstance: () => chartRef.value?.$el ? echarts.getInstanceByDom(chartRef.value.$el) : null
+  getEChartsInstance  // ИЗМЕНЕНО: Теперь экспортируем ссылку на const (без повторного определения)
 });
 
 const props = defineProps<{
@@ -264,11 +288,13 @@ const fetchFlightData = async () => {
 
     console.log('Flight data received:', flightData);
 
-    if (chartRef.value && flightData.length > 0) {
+    // ИЗМЕНЕНО: Рекомендация - используйте getEChartsInstance() для consistency
+    const chartInstance = getEChartsInstance();  // ДОБАВЛЕНО: Вместо chartRef.value
+    if (chartInstance && flightData.length > 0) {
       const maxValue = Math.max(...flightData.map((item: { value: number }) => item.value));
       const seriesName = currentView.value === 'region' ? 'полетов в районе' : 'полетов';
 
-      chartRef.value.setOption({
+      chartInstance.setOption({
         tooltip: { formatter: `{b}: <strong>{c}</strong> ${seriesName}` },
         visualMap: {
           min: 0,
@@ -293,8 +319,8 @@ const fetchFlightData = async () => {
           }
         }]
       });
-    } else if (chartRef.value) {
-      chartRef.value.setOption(getBaseMapOption(
+    } else if (chartInstance) {
+      chartInstance.setOption(getBaseMapOption(
         currentView.value === 'region' ? selectedRegion.value || 'Russia' : 'Russia',
         currentView.value === 'region'
       ));
@@ -326,110 +352,118 @@ const loadRegionMap = async () => {
     geoData.features.forEach((feature: any) => {
       try {
         const polygon = feature.geometry;
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 50; i++) {  // ДОБАВЛЕНО: Увеличьте до 100-200 для плотности, если нужно
           const point = randomPointInPolygon(polygon);
-          heatData.push([point[0], point[1], Math.random() * 5 + 1]);  // Value 1-6 for gradient
+          heatData.push([point[0], point[1], 1]);  // Value 1-6 for gradient
         }
       } catch (e) {
         console.warn(`Skip heatmap for district ${feature.properties.district}: ${e.message}`);
       }
     });
     console.log('Heatmap points generated:', heatData.length);
-    if (chartRef.value) {
-      chartRef.value.setOption({
-        geo: {
-          map: selectedRegion.value,
-          roam: true,
-          zoom: 30,
-          center: calculatedCenter,
-          scaleLimit: { min: 10, max: 200 },  // Изменено: min 10, max 200 для дистрикт
+
+    // ДОБАВЛЕНО: Получаем экземпляр ECharts для consistency с событиями
+    const chartInstance = getEChartsInstance();
+    if (!chartInstance) {
+      throw new Error('ECharts instance not found');
+    }
+
+    // ИЗМЕНЕНО: Используем chartInstance.setOption вместо chartRef.value.setOption
+    chartInstance.setOption({
+      geo: {
+        map: selectedRegion.value,
+        roam: true,
+        zoom: 30,
+        center: calculatedCenter,
+        scaleLimit: { min: 10, max: 400 },  // Изменено: min 10, max 200 для дистрикт
+        itemStyle: {
+          areaColor: 'transparent',
+          borderColor: '#ffffff',
+          borderWidth: 2
+        },
+        label: {
+          show: false,
+          // formatter: (params: any) => {
+
+          //   return params.name;
+          // },
+          color: '#000000',
+          fontSize: 14,
+          backgroundColor: '#ffffff',
+          padding: [2, 4]
+        }
+      },
+      visualMap: {
+        show: false,
+        min: 0,
+        max: 5,
+        inRange: {
+          color: [
+            'rgba(33,102,172,0)',
+            'rgb(103,169,207)',
+            'rgb(209,229,240)',
+            'rgb(253,219,199)',
+            'rgb(239,138,98)',
+            'rgb(178,24,43)'
+          ]
+        }
+      },
+      series: [
+        {
+          id: 'heatmapLayer',
+          type: 'heatmap',
+          coordinateSystem: 'geo',
+          data: heatData,
+          blurSize: 20,
+          pointSize: 20,
+          itemStyle: { opacity: 1 }
+        },
+        {  // Borders layer, transparent no color
+          id: 'bordersLayer',
+          name: 'Активность полетов',
+          type: 'map',
+          geoIndex: 0,
+          data: districtNames.map(name => ({ name })),
           itemStyle: {
             areaColor: 'transparent',
             borderColor: '#ffffff',
             borderWidth: 2
           },
-          label: {
-            show: true,
-            formatter: '{name}',
-            color: '#000000',
-            fontSize: 14,
-            backgroundColor: '#ffffff',
-            padding: [2, 4]
+          emphasis: {
+            focus: 'self',
+            itemStyle: { areaColor: 'transparent', borderColor: '#ffc107', borderWidth: 2 },
+            label: { show: true }
           }
-        },
-        visualMap: {
-          show: false,
-          min: 0,
-          max: 5,
-          inRange: {
-            color: [
-              'rgba(33,102,172,0)',
-              'rgb(103,169,207)',
-              'rgb(209,229,240)',
-              'rgb(253,219,199)',
-              'rgb(239,138,98)',
-              'rgb(178,24,43)'
-            ]
-          }
-        },
-        series: [
-          {
-            type: 'heatmap',
-            coordinateSystem: 'geo',
-            data: heatData,
-            blurSize: 20,
-            pointSize: 20,
-            itemStyle: { opacity: 1 }
-          },
-          {
-            type: 'scatter',
-            coordinateSystem: 'geo',
-            data: heatData,
-            symbolSize: (val) => val[2] * 2 + 3,  // 3–13 px
-            itemStyle: {
-              opacity: 0,
-              color: 'interpolate'  // Use visualMap gradient
-            }
-          },
-          {  // Borders layer, transparent no color
-            name: 'Активность полетов',
-            type: 'map',
-            geoIndex: 0,
-            data: districtNames.map(name => ({ name })),
-            itemStyle: {
-              areaColor: 'transparent',
-              borderColor: '#ffffff',
-              borderWidth: 2
-            },
-            emphasis: {
-              focus: 'self',
-              itemStyle: { areaColor: 'transparent', borderColor: '#ffc107', borderWidth: 2 },
-              label: { show: true }
-            }
-          }
-        ]
-      });
-      // Dynamic zoom effect
-      chartRef.value.on('georoam', () => {
-        const zoom = chartRef.value.getOption().geo[0].zoom;
-        const heatmapOpacity = 1;
-        const scatterOpacity = 0;
-        const heatmapPointSize = Math.max(1, 1 * zoom);
-        const heatmapBlurSize = Math.max(1, 5 * zoom);
-        chartRef.value.setOption({
+        }
+      ]
+    });
+
+    // ДОБАВЛЕНО: Dynamic zoom effect из старой версии
+    chartInstance.on('georoam', () => {
+      const debouncedUpdate = debounce(() => {
+      const option = chartInstance.getOption();
+      if (!option || !option.geo || !option.geo[0]) return;
+      const zoom = option.geo[0].zoom as number;
+      const heatmapOpacity = 1;
+      const heatmapPointSize = 0.05 * zoom;
+      const heatmapBlurSize = 0.2 * zoom;
+      chartInstance.setOption({
           series: [
             {
-              type: 'heatmap',
+              id: 'heatmapLayer', // <--- УКАЖИ ID
               itemStyle: { opacity: heatmapOpacity },
               pointSize: heatmapPointSize,
               blurSize: heatmapBlurSize
-            },
-            { type: 'scatter', itemStyle: { opacity: scatterOpacity } }
+            }
+            // Серию 'bordersLayer' можно не трогать, она не обновляется
           ]
         });
-      });
-      await fetchFlightData();
-    }
+      }, 200);
+      chartInstance.on('georoam', debouncedUpdate);
+    });
+
+
+
   } catch (error) {
     console.error(`Ошибка загрузки GeoJSON для ${selectedRegion.value}:`, error);
     errorMessage.value = `Не удалось загрузить карту для ${selectedRegion.value}.`;
@@ -437,7 +471,9 @@ const loadRegionMap = async () => {
 };
 
 const refreshMap = () => {
-  if (chartRef.value) {
+  // ИЗМЕНЕНО: Используйте getEChartsInstance() вместо chartRef.value
+  const chartInstance = getEChartsInstance();
+  if (chartInstance) {
     const mapName = currentView.value === 'region' ? selectedRegion.value || 'Russia' : 'Russia';
     const isRegionLocal = currentView.value === 'region';
     const geoDataFromCache = cachedGeo.value[mapName] || { features: [] };
@@ -446,7 +482,7 @@ const refreshMap = () => {
       const calculated = calculateCentroid(geoDataFromCache);
       newCenter = (isNaN(calculated[0]) || isNaN(calculated[1])) ? [95, 65] : calculated;
     }
-    chartRef.value.setOption({
+    chartInstance.setOption({
       geo: {
         zoom: isRegionLocal ? 50.0 : 1.2,
         center: newCenter
