@@ -18,7 +18,7 @@
         </div>
         <div class="region-info">
           <p class="label">Выбранный регион</p>
-          <h2 class="region-name">{{ selectedRegion || 'Russian Federation' }}</h2>
+          <h2 class="region-name">{{ props.selectedPath || 'Russian Federation' }}</h2>
         </div>
       </div>
       <div class="date-group">
@@ -52,7 +52,7 @@ interface Filters {
 
 const props = defineProps<{
   filters: Filters;
-  selectedRegion?: string;
+  selectedPath?: string;
   missingMonths: string[];
 }>();
 

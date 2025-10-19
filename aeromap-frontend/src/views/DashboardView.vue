@@ -4,7 +4,7 @@
 
     <main class="dashboard-content">
       <DashboardFilters @filters-updated="handleFiltersUpdate" />
-      <SelectedParams :filters="activeFilters" :selectedRegion="selectedRegion" :missingMonths="missingMonths" />
+      <SelectedParams :filters="activeFilters" :selectedPath="selectedPath" :missingMonths="missingMonths" />
 
       <div class="metrics-row" ref="metricsRowRef">
         <MetricCard title="Всего полётов" :value="metrics.totalFlights" :is-loading="isLoadingMetrics" />
@@ -27,7 +27,7 @@
             ref="mapOverviewRef"
             :key="componentKey"
             :filters="activeFilters"
-            @region-selected="handleRegionSelected"
+            @selection-updated="handleSelectionUpdated"
           />
           <div class="charts-row">
             <TopRegionsChart ref="topRegionsChartRef" :key="componentKey + 1" :filters="activeFilters" />
@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive, nextTick  } from 'vue';
+import { ref, onMounted, reactive, computed  } from 'vue';
 import axios from 'axios';
 
 // Импорты всех компонентов
@@ -102,10 +102,15 @@ const isModalVisible = ref(false);
 const isLoadingMetrics = ref(true);
 const componentKey = ref(0);
 const selectedRegion = ref<string>('Russian Federation');
+const selectedDistrict = ref<string | null>(null);
+
 const missingMonths = ref<string[]>([]);
 const showGrowthModal = ref(false);
 const growthPercentData = ref<GrowthData[]>([]);
 
+const selectedPath = computed(() => {
+  return selectedDistrict.value ? `${selectedRegion.value} > ${selectedDistrict.value}` : selectedRegion.value;
+});
 
 const metricsRowRef = ref<HTMLElement | null>(null);
 const mapOverviewRef = ref(null);
@@ -225,9 +230,10 @@ const loadImage = (src: string): Promise<HTMLImageElement> => {
 };
 
 
-const handleRegionSelected = (region: string) => {
-  console.log('Region selected:', region);
+const handleSelectionUpdated = ({ region, district }: { region: string; district: string | null }) => {
+  console.log('Selection updated:', { region, district });
   selectedRegion.value = region;
+  selectedDistrict.value = district;
   debouncedFetch();
 };
 
@@ -294,6 +300,23 @@ const fetchDataForSidebar = async () => {
     const from = activeFilters.value.from || '2025-01-01';
     const to = activeFilters.value.to || '2025-12-31';
     const selected = selectedRegion.value;
+    const selectedDistrictLocal = selectedDistrict.value;
+
+    if (selectedDistrictLocal) {
+      console.warn(`⚠️ Заглушка для района: ${selectedDistrictLocal} в ${selected}. Данные не найдены`);
+      metrics.totalFlights = null;
+      metrics.avgDuration = null;
+      metrics.peakLoad = null;
+      metrics.flightDensity = null;
+      metrics.zeroDays = null;
+      metrics.growthPercent = null;
+      metrics.hourlyDistribution = null;
+      growthPercentData.value = [];
+      missingMonths.value = [];
+      isLoadingMetrics.value = false;
+      return;
+    }
+
     const isAllRussia = selected === 'Russian Federation';
     console.log('🚀 Загрузка метрик:', { region: selected, period: { from, to } });
 
@@ -322,20 +345,20 @@ const fetchDataForSidebar = async () => {
         params.region = selected;
       }
       const url = `/api/metrics?${new URLSearchParams(params).toString()}`;
-      console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
+      //console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
       try {
         const response = await axios.get('/api/metrics', { params });
-        console.log(`✅ Ответ для ${url}:`, response.data);
+        //console.log(`✅ Ответ для ${url}:`, response.data);
         let data = response.data;
         if (!Array.isArray(data)) {
-          console.warn(`⚠️ Ответ для ${year}-${month} не массив, преобразую в массив:`, data);
+          //console.warn(`⚠️ Ответ для ${year}-${month} не массив, преобразую в массив:`, data);
           data = [data];
         }
         if (data.length === 0) {
-          console.warn(`⚠️ Пустой ответ для ${year}-${month}, добавляем в missingMonths`);
+          //.warn(`⚠️ Пустой ответ для ${year}-${month}, добавляем в missingMonths`);
           missingMonths.value.push(`${year}-${month}`);
         }
-        console.log(`📊 Обработанные данные для ${year}-${month}:`, data);
+        //console.log(`📊 Обработанные данные для ${year}-${month}:`, data);
         return { data, month: `${year}-${month}` };
       } catch (error: any) {
         console.error(`❌ Ошибка для ${url}:`, {
@@ -354,7 +377,7 @@ const fetchDataForSidebar = async () => {
     console.log('📥 Все данные по регионам:', { count: allRegionsData.length, data: allRegionsData });
 
     if (allRegionsData.length === 0) {
-      console.warn('⚠️ Нет данных от API /metrics. Устанавливаем метрики в null.');
+      //console.warn('⚠️ Нет данных от API /metrics. Устанавливаем метрики в null.');
       metrics.totalFlights = null;
       metrics.avgDuration = null;
       metrics.peakLoad = null;
@@ -390,11 +413,11 @@ const fetchDataForSidebar = async () => {
     });
 
     allRegionsData.forEach((region: any, index: number) => {
-      console.log(`🔍 Обрабатываю регион ${index + 1}/${allRegionsData.length}:`, region.region || 'unknown', {
-        flight_count: region.flight_count,
-        total_duration_min: region.total_duration_min,
-        zero_days: region.zero_days,
-      });
+      // console.log(`🔍 Обрабатываю регион ${index + 1}/${allRegionsData.length}:`, region.region || 'unknown', {
+      //   flight_count: region.flight_count,
+      //   total_duration_min: region.total_duration_min,
+      //   zero_days: region.zero_days,
+      // });
       totals.totalFlights += region.flight_count || 0;
       totals.totalDuration += region.total_duration_min || 0;
       totals.peakLoad = Math.max(totals.peakLoad, region.peak_load_hourly || 0);
@@ -585,7 +608,6 @@ const handleExportJson = async () => {
 
 // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
 const handleFiltersUpdate = (filters: Filters) => {
-  console.log('Received filters in DashboardView:', filters);
   activeFilters.value = {
     from: filters.from || '2025-01-01',
     to: filters.to || '2025-12-31',
