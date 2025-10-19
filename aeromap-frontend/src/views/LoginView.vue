@@ -71,17 +71,21 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import keycloak from '@/utils/keycloak';
 
 const username = ref('');
 const password = ref('');
 const router = useRouter();
 
-const handleLogin = () => {
-  // Mock successful login
-  console.log('Attempting login with:', username.value);
-  localStorage.setItem('user-token', 'mock-token');
-  router.push('/dashboard');
-};
+
+const handleLogin = () => keycloak.login({ redirectUri: window.location.origin + '/dashboard' });
+
+// const handleLogin = () => {
+//
+//   console.log('Attempting login with:', username.value);
+//   localStorage.setItem('user-token', 'mock-token');
+//   router.push('/dashboard');
+// };
 </script>
 
 <style scoped>

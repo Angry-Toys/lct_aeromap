@@ -11,6 +11,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { MapChart } from 'echarts/charts';
 import { TitleComponent, TooltipComponent, VisualMapComponent, ToolboxComponent } from 'echarts/components';
 echarts.use([CanvasRenderer, MapChart, TitleComponent, TooltipComponent, VisualMapComponent, ToolboxComponent]);
+import { initKeycloak } from './utils/keycloak';
 
 const app = createApp(App)
 
@@ -18,5 +19,5 @@ app.config.globalProperties.$echarts = echarts;  // Глобальный дос�
 
 app.use(createPinia())
 app.use(router)
-
+await initKeycloak();
 app.mount('#app')

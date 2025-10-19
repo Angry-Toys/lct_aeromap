@@ -71,8 +71,9 @@ import MetricCard from '../components/ui/MetricCard.vue';
 import UploadModal from '../components/ui/UploadModal.vue';
 import UploadStatus from '../components/ui/UploadStatus.vue';
 import GrowthChartModal from '../components/ui/GrowthChartModal.vue';
-import ExportModal from '../components/ui/ExportModal.vue'; // Импортируем модалку
+import ExportModal from '../components/ui/ExportModal.vue';
 import html2canvas from 'html2canvas'; // Библиотека для скриншота метрик
+import api from '@/utils/api';  // Импорт глобального api с токеном
 
 // Определяем тип для задачи загрузки
 interface UploadTask {

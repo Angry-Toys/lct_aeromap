@@ -43,6 +43,7 @@ import { TooltipComponent, VisualMapComponent, GeoComponent, TitleComponent } fr
 import { CanvasRenderer } from 'echarts/renderers';
 import VChart from 'vue-echarts';
 import axios from 'axios';
+import api from '@/utils/api';  // Импорт глобального api с токеном
 
 // Регистрация необходимых компонентов ECharts
 echarts.use([
@@ -158,7 +159,7 @@ const initMap = async () => {
 const fetchFlightData = async () => {
   isLoading.value = true;
   try {
-    const response = await axios.get('/api/api/regions/flights', {
+    const response = await api.get('/api/regions/flights', {
       params: {
         from: props.filters.from || '2025-01-01',
         to: props.filters.to || '2025-12-31',
