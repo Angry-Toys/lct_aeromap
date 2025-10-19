@@ -22,16 +22,23 @@ import os
 from sklearn.linear_model import LinearRegression
 import numpy as np
 from werkzeug.exceptions import Unauthorized
+from werkzeug.middleware.proxy_fix import ProxyFix
+from sklearn.cluster import DBSCAN
+import numpy as np
 
 app = Flask(__name__)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False 
+app.config['SESSION_COOKIE_DOMAIN'] = None
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 CORS(app, origins=['*']) 
 
 app.config.update({
     'OIDC_CLIENT_SECRETS': {  
         'web': {
-            'client_id': os.getenv('OIDC_CLIENT_ID', 'your-client-id'),
-            'client_secret': os.getenv('OIDC_CLIENT_SECRET', 'your-secret'),
-            'issuer': os.getenv('OIDC_ISSUER', 'https://your-keycloak/auth/realms/your-realm'),
+            'client_id': os.getenv('OIDC_CLIENT_ID', 'aviation-api'),
+            'client_secret': os.getenv('OIDC_CLIENT_SECRET', '8HUnPbB26kdCImTFXLfN9scQLQmYLW4d'),
+            'issuer': os.getenv('OIDC_ISSUER', 'http://keycloak:8080/realms/aviation-realm'),
             'auth_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/auth',
             'token_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/token',
             'userinfo_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/userinfo',
@@ -42,7 +49,7 @@ app.config.update({
     },
     'OIDC_COOKIE_SECURE': False, 
     'OIDC_USER_INFO_ENABLED': True,
-    'OIDC_OPENID_REALM': 'your-realm',
+    'OIDC_OPENID_REALM': 'aviation-realm',
     'OIDC_SCOPES': ['openid', 'email', 'profile'],
     'OIDC_INTROSPECTION_AUTH_METHOD': 'client_secret_post',
     'OVERWRITE_REDIRECT_URI': 'http://localhost:5000/oidc_callback',  
@@ -487,7 +494,9 @@ def get_flights_coords():
         year = request.args.get('year')
         month = request.args.get('month')
         region = request.args.get('region')
-        limit = int(request.args.get('limit', 5000))
+        limit = int(request.args.get('limit', 5000)) 
+        cluster_eps = float(request.args.get('cluster_eps', 0.05)) 
+
         sql = """
             SELECT dep_lat AS lat, dep_lon AS lon, 
                    COALESCE(duration_min, 1) AS intensity 
@@ -506,10 +515,35 @@ def get_flights_coords():
             params['region'] = region
         sql += " LIMIT :limit;"
         params['limit'] = limit
+
         with engine.connect() as conn:
             df = pd.read_sql(text(sql), conn, params=params)
+
         if df.empty:
             return jsonify([])
+
+        coords = df[['lat', 'lon']].values
+        if len(coords) > 1:
+            radians = np.deg2rad(coords)
+            db = DBSCAN(eps=cluster_eps / 6371.0, min_samples=1, algorithm='ball_tree', metric='haversine') 
+            labels = db.fit_predict(radians)
+
+            aggregated = []
+            for label in np.unique(labels):
+                if label == -1: continue 
+                cluster_df = df[labels == label]
+                agg_lat = cluster_df['lat'].mean()
+                agg_lon = cluster_df['lon'].mean()
+                count = len(cluster_df)
+                agg_intensity = cluster_df['intensity'].sum()
+                aggregated.append({
+                    'lat': agg_lat,
+                    'lon': agg_lon,
+                    'count': count,
+                    'intensity': agg_intensity
+                })
+            return jsonify(aggregated), 200
+
         return jsonify(df.to_dict(orient='records')), 200
     except Exception as e:
         app.logger.error(f"Error in flights/coords: {str(e)}")
