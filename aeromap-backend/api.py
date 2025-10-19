@@ -474,6 +474,7 @@ def get_customers_metrics():
             df = pd.read_sql("SELECT customer, flight_id, duration_min FROM flights WHERE customer IS NOT NULL;", conn)
         if df.empty:
             return jsonify({"error": "No data"}), 404
+        df['customer'] = df['customer'].apply(lambda x: re.sub(r'\+\d{10,}', '', x).strip() if x else x)
         metrics = df.groupby('customer').agg({
             'flight_id': 'count',
             'duration_min': ['mean', 'sum']
@@ -483,6 +484,23 @@ def get_customers_metrics():
         return jsonify(metrics.to_dict(orient='records')), 200
     except Exception as e:
         app.logger.error(f"Error in customers metrics: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route('/metrics/customers/list', methods=['GET'])
+@oidc.accept_token()
+def get_customers_list():
+    if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        raise Unauthorized("Missing or invalid authorization token")
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql("SELECT DISTINCT customer FROM flights WHERE customer IS NOT NULL;", conn)
+        if df.empty:
+            return jsonify([]), 200
+        df['customer'] = df['customer'].apply(lambda x: re.sub(r'\+\d{10,}', '', x).strip() if x else x)
+        customers = df['customer'].tolist()
+        return jsonify(customers), 200
+    except Exception as e:
+        app.logger.error(f"Error in customers list: {str(e)}")
         return jsonify({"error": str(e)}), 500
     
 @bp.route('/flights/coords', methods=['GET'])
