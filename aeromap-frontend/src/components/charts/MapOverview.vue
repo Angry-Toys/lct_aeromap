@@ -235,7 +235,7 @@ const getBaseMapOption = (mapName: string, isRegion: boolean = false) => ({
 });
 
 const handleChartClick = (params: any) => {
-  if (params.seriesType === 'map') {  // Simplified, works even without componentType
+  if (params.seriesType === 'map') {
     if (currentView.value === 'country') {
       selectedRegion.value = params.name;
       selectedDistrict.value = null;
@@ -243,8 +243,9 @@ const handleChartClick = (params: any) => {
       loadRegionMap();
       emit('selection-updated', { region: params.name, district: null });
     } else if (currentView.value === 'region') {
-      selectedDistrict.value = params.name;
-      emit('selection-updated', { region: selectedRegion.value, district: params.name });
+      // selectedDistrict.value = params.name;
+      // emit('selection-updated', { region: selectedRegion.value, district: params.name });
+      console.log('Клик по району. Drill-down отключен.');
     }
   }
   console.log('Chart click params:', params);
@@ -343,12 +344,8 @@ const loadRegionMap = async () => {
     });
     echarts.registerMap(selectedRegion.value, geoData);
     cachedGeo.value[selectedRegion.value] = geoData;
-    console.log('First district properties:', geoData.features[0]?.properties);
     const districtNames = geoData.features.map((f: any) => f.properties.name || 'Unknown');
-    console.log('District names extracted:', districtNames);
-    const calculatedCenter = calculateCentroid(geoData);
-    console.log(`Calculated center for ${selectedRegion.value}:`, calculatedCenter);
-    const heatData = [];
+    const calculatedCenter = calculateCentroid(geoData);    const heatData = [];
     geoData.features.forEach((feature: any) => {
       try {
         const polygon = feature.geometry;
@@ -375,23 +372,32 @@ const loadRegionMap = async () => {
         roam: true,
         zoom: 30,
         center: calculatedCenter,
-        scaleLimit: { min: 10, max: 400 },  // Изменено: min 10, max 200 для дистрикт
+        scaleLimit: { min: 10, max: 200 },  // Изменено: min 10, max 200 для дистрикт
         itemStyle: {
           areaColor: 'transparent',
           borderColor: '#ffffff',
           borderWidth: 2
         },
+        select: {
+        itemStyle: {
+          areaColor: '#transparent',
+          borderColor: '#ffd54f',
+          borderWidth: 2,
+        },},
         label: {
           show: false,
-          // formatter: (params: any) => {
-
-          //   return params.name;
-          // },
           color: '#000000',
           fontSize: 14,
           backgroundColor: '#ffffff',
           padding: [2, 4]
-        }
+        },
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          textStyle: { color: '#ffc107' },
+          formatter: '{b}'
+        },
+
       },
       visualMap: {
         show: false,
@@ -414,8 +420,8 @@ const loadRegionMap = async () => {
           type: 'heatmap',
           coordinateSystem: 'geo',
           data: heatData,
-          blurSize: 20,
-          pointSize: 20,
+          blurSize: 3,
+          pointSize: 1.5,
           itemStyle: { opacity: 1 }
         },
         {  // Borders layer, transparent no color
@@ -446,7 +452,7 @@ const loadRegionMap = async () => {
       const zoom = option.geo[0].zoom as number;
       const heatmapOpacity = 1;
       const heatmapPointSize = 0.05 * zoom;
-      const heatmapBlurSize = 0.2 * zoom;
+      const heatmapBlurSize = 0.1 * zoom;
       chartInstance.setOption({
           series: [
             {
@@ -493,14 +499,14 @@ const refreshMap = () => {
 };
 
 const goBack = () => {
+  errorMessage.value = '';
   currentView.value = 'country';
-  selectedRegion.value = null;
+
   selectedDistrict.value = null;
   if (chartRef.value) {
     chartRef.value.setOption(getBaseMapOption('Russia'));
     fetchFlightData();
   }
-  emit('selection-updated', { region: 'Russian Federation', district: null });
 };
 
 onMounted(() => {
