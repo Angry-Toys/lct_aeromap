@@ -89,6 +89,7 @@ interface Filters {
   from?: string | null;
   to?: string | null;
   metric?: 'count' | 'avg_duration';
+  customer?: string | null; // <-- ДОБАВЛЕНО
 }
 
 // Тип для данных графика роста
@@ -237,17 +238,13 @@ const handleSelectionUpdated = ({ region, district }: { region: string; district
   debouncedFetch();
 };
 
-const handleCardClick = (title: string) => {
-  if (title === 'Рост за период') {
-    showGrowthModal.value = true;
-  }
-};
 
 // Единый объект с фильтрами
 const activeFilters = ref<Filters>({
   from: '2025-01-01',
   to: '2025-12-31',
   metric: 'count',
+  customer: null, // <-- ДОБАВЛЕНО
 });
 
 // Реактивный объект для хранения всех метрик
@@ -344,6 +341,12 @@ const fetchDataForSidebar = async () => {
       if (selected) {
         params.region = selected;
       }
+      // === ДОБАВЛЕНО: Передаем customer в /api/metrics ===
+      if (activeFilters.value.customer) {
+        params.customer = activeFilters.value.customer;
+      }
+      // === КОНЕЦ БЛОКА ===
+
       const url = `/api/metrics?${new URLSearchParams(params).toString()}`;
       //console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
       try {
@@ -612,6 +615,7 @@ const handleFiltersUpdate = (filters: Filters) => {
     from: filters.from || '2025-01-01',
     to: filters.to || '2025-12-31',
     metric: filters.metric || 'count',
+    customer: filters.customer || null, // <-- ДОБАВЛЕНО
   };
   debouncedFetch();
   componentKey.value++;

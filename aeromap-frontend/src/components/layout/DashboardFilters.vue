@@ -125,6 +125,35 @@
           </div>
         </div>
       </div>
+    <div class="input-group">
+          <label class="input-label">Заказчик</label>
+          <div class="dropdown-wrapper customer-dropdown" @click="toggleDropdown('customer')" :data-is-open="dropdowns.customer">
+            <button class="dropdown-button">
+              <span class="font-medium">{{ customers.find(c => c.id === filters.customer)?.name || 'Все' }}</span>
+              <svg class="dropdown-arrow" :class="{ 'rotate-180': dropdowns.customer }" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+            </button>
+            <div v-if="dropdowns.customer" class="dropdown-menu">
+              <button
+                class="dropdown-item"
+                :class="{ 'item-active': filters.customer === null }"
+                @click.stop="selectPeriod('customer', null)"
+              >
+                Все
+                <svg v-if="filters.customer === null" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+              </button>
+              <button
+                v-for="cust in customers"
+                :key="cust.id"
+                class="dropdown-item"
+                :class="{ 'item-active': filters.customer === cust.id }"
+                @click.stop="selectPeriod('customer', cust.id)"
+              >
+                {{ cust.name }}
+                <svg v-if="filters.customer === cust.id" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+              </button>
+            </div>
+          </div>
+    </div>
     </div>
 
     <!-- Кнопка Применить -->
@@ -144,6 +173,8 @@ const periodBtnRef = ref<HTMLElement | null>(null);
 const indicatorStyle = ref({});
 
 
+
+
 // --- СОСТОЯНИЕ ФИЛЬТРОВ И РЕЖИМОВ ---
 const filterMode = ref<'dateRange' | 'period'>('dateRange'); // Default mode
 const today = new Date().toISOString().split('T')[0];
@@ -153,6 +184,7 @@ const filters = reactive({
   year: '2025',
   month: null as string | null, // null = Все месяцы
   // Режим Date Range
+  customer: null as string | null,
   fromDate: '2025-01-01',
   toDate: today,
 });
@@ -160,6 +192,7 @@ const filters = reactive({
 const dropdowns = reactive({
   year: false,
   month: false,
+  customer: false,
 });
 
 const currentYear = new Date().getFullYear();
@@ -180,6 +213,36 @@ const months = [
 const getMonthName = (monthValue: string | null) => {
     return months.find(m => m.value === monthValue)?.name || 'Все';
 };
+
+
+// === ДОБАВЛЕНО: ДАННЫЕ ДЛЯ ЗАКАЗЧИКОВ ===
+interface Customer {
+  id: string;
+  name: string;
+}
+const customers = ref<Customer[]>([]);
+
+const fetchCustomers = async () => {
+  try {
+    // !!! ЗАМЕНИТЬ НА РЕАЛЬНЫЙ ЗАПРОС !!!
+    // const response = await api.get('/api/customers');
+    // customers.value = response.data;
+
+    // --- Моковые данные ---
+    console.warn('Using MOCK customer list');
+    customers.value = [
+      { id: 'customer_1', name: 'Газпром' },
+      { id: 'customer_2', name: 'Роснефть' },
+      { id: 'customer_3', name: 'МЧС' },
+    ];
+    // --- Конец мока ---
+
+  } catch (e) {
+    console.error('Failed to fetch customers', e);
+  }
+};
+// === КОНЕЦ БЛОКА ===
+
 
 // --- ЛОГИКА ДИНАМИЧЕСКОГО ПЕРЕКЛЮЧАТЕЛЯ ---
 const updateIndicatorStyle = () => {
@@ -212,16 +275,21 @@ const setFilterMode = (mode: 'dateRange' | 'period') => {
 
 
 
-const toggleDropdown = (key: 'year' | 'month') => {
-    if (key === 'year') {
-        dropdowns.month = false;
-    } else {
-        dropdowns.year = false;
-    }
-    dropdowns[key] = !dropdowns[key];
+const toggleDropdown = (key: 'year' | 'month' | 'customer') => {
+  if (key === 'year') {
+    dropdowns.month = false;
+    dropdowns.customer = false;
+  } else if (key === 'month') {
+    dropdowns.year = false;
+    dropdowns.customer = false;
+  } else { // key === 'customer'
+    dropdowns.year = false;
+    dropdowns.month = false;
+  }
+  dropdowns[key] = !dropdowns[key];
 };
 
-const selectPeriod = (key: 'year' | 'month', value: string | null) => {
+const selectPeriod = (key: 'year' | 'month' | 'customer', value: string | null) => {
     filters[key] = value as any;
     toggleDropdown(key);
 };
@@ -247,11 +315,11 @@ const applyFilters = () => {
     }
   }
 
-  emit('filters-updated', {
+emit('filters-updated', {
     from: fromDate,
     to: toDate,
-    // Добавляем текущую метрику, чтобы не сбрасывать ее при смене дат
-    metric: 'count' // или можно прокинуть из родителя
+    customer: filters.customer, // <-- ДОБАВЛЕНО
+    metric: 'count'
   });
 };
 
@@ -264,6 +332,7 @@ watch(filterMode, () => {
 watch(filters, applyFilters, { deep: true });
 
 onMounted(() => {
+    fetchCustomers();
     applyFilters();
     updateIndicatorStyle();
 });
@@ -533,5 +602,13 @@ onMounted(() => {
         width: 100%;
     }
 }
+
+
+.customer-dropdown:hover .dropdown-button,
+.dropdown-wrapper[data-is-open="true"].customer-dropdown .dropdown-button {
+    border-color: #2563eb; /* Blue */
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+}
+
 </style>
 

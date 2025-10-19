@@ -42,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import * as echarts from 'echarts/core';
 import { MapChart, EffectScatterChart } from 'echarts/charts';
 import { TooltipComponent, VisualMapComponent, GeoComponent, TitleComponent } from 'echarts/components';
@@ -64,6 +64,12 @@ echarts.use([
   HeatmapChart,
   ScatterChart
 ]);
+
+type HeatmapPoint = {
+  intensity: number;
+  lat: number;
+  lon: number;
+};
 
 
 function debounce<T extends (...args: any[]) => any>(
@@ -116,43 +122,7 @@ const calculateCentroid = (geoJson: any): [number, number] => {
   return [centerLon, centerLat];
 };
 
-const pointInPolygon = (point: [number, number], ring: [number, number][]): boolean => {
-  const [x, y] = point;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-};
 
-const randomPointInPolygon = (polygon: any): [number, number] => {
-  // Handle Polygon/MultiPolygon
-  let rings = [];
-  if (polygon.type === 'Polygon') {
-    rings = polygon.coordinates;  // array of rings
-  } else if (polygon.type === 'MultiPolygon') {
-    rings = polygon.coordinates.flat();  // flat to rings
-  } else {
-    return [0, 0];  // Fallback if not polygon
-  }
-  const outerRing = rings[0] || [];  // First outer ring
-  if (!Array.isArray(outerRing) || outerRing.length < 3) return [0, 0];  // Invalid
-  const minX = Math.min(...outerRing.map(p => p[0]));
-  const maxX = Math.max(...outerRing.map(p => p[0]));
-  const minY = Math.min(...outerRing.map(p => p[1]));
-  const maxY = Math.max(...outerRing.map(p => p[1]));
-  let point: [number, number];
-  let attempts = 0;
-  do {
-    point = [minX + Math.random() * (maxX - minX), minY + Math.random() * (maxY - minY)];
-    attempts++;
-    if (attempts > 100) return [minX, minY];  // Fallback if stuck
-  } while (!pointInPolygon(point, outerRing));
-  return point;
-};
 
 const getEChartsInstance = () => {  // ДОБАВЛЕНО: Выносим функцию как const для внутреннего использования
   return chartRef.value?.$el ? echarts.getInstanceByDom(chartRef.value.$el) : null;
@@ -163,7 +133,7 @@ defineExpose({
 });
 
 const props = defineProps<{
-  filters: { from?: string | null; to?: string | null; metric?: 'count' | 'avg_duration' };
+  filters: { from?: string | null; to?: string | null; metric?: 'count' | 'avg_duration'; customer?: string | null };
 }>();
 
 const emit = defineEmits(['selection-updated']);
@@ -268,7 +238,6 @@ const fetchFlightData = async () => {
   isLoading.value = true;
   try {
     let flightData = [];
-    let apiEndpoint = '/api/regions/flights';
     let params = {
       from: props.filters.from || '2025-01-01',
       to: props.filters.to || '2025-12-31',
@@ -276,14 +245,14 @@ const fetchFlightData = async () => {
     };
 
     if (currentView.value === 'region' && selectedRegion.value) {
-      apiEndpoint = '/api/districts/flights';
       params = { ...params, region: selectedRegion.value };
       console.warn(`Заглушка для районов в ${selectedRegion.value}`);
       const geoDataFromCache = cachedGeo.value[selectedRegion.value] || { features: [] };
       const districtNames = geoDataFromCache.features.map((f: any) => f.properties.district || 'Unknown');
       flightData = districtNames.map(name => ({ name, value: Math.floor(Math.random() * 1000) }));
     } else {
-      const response = await api.get(apiEndpoint, { params });
+
+      const response =  await axios.get('/api/regions/flights', { params })
       flightData = response.data;
     }
 
@@ -345,19 +314,53 @@ const loadRegionMap = async () => {
     echarts.registerMap(selectedRegion.value, geoData);
     cachedGeo.value[selectedRegion.value] = geoData;
     const districtNames = geoData.features.map((f: any) => f.properties.name || 'Unknown');
-    const calculatedCenter = calculateCentroid(geoData);    const heatData = [];
-    geoData.features.forEach((feature: any) => {
-      try {
-        const polygon = feature.geometry;
-        for (let i = 0; i < 50; i++) {  // ДОБАВЛЕНО: Увеличьте до 100-200 для плотности, если нужно
-          const point = randomPointInPolygon(polygon);
-          heatData.push([point[0], point[1], 1]);  // Value 1-6 for gradient
-        }
-      } catch (e) {
-        console.warn(`Skip heatmap for district ${feature.properties.district}: ${e.message}`);
+    const calculatedCenter = calculateCentroid(geoData);
+
+    // ========================================================
+    // === БЛОК ИЗМЕНЕНИЙ: ЗАГРУЗКА HEATMAP ИЗ API ===
+    // ========================================================
+    let heatData = [];
+    try {
+      // 1. Берем фильтры из props
+      const fromDate = new Date(props.filters.from || '2025-01-01');
+      const year = fromDate.getFullYear();
+      const month = fromDate.getMonth() + 1; // JS месяцы 0-11, API нужен 1-12
+      const customer = props.filters.customer || null;
+
+      // 2. Собираем параметры запроса
+      const apiParams: any = {
+        year: String(year),
+        month: String(month),
+        region: selectedRegion.value,
+      };
+      if (customer) {
+        apiParams.customer = customer;
       }
-    });
-    console.log('Heatmap points generated:', heatData.length);
+
+       console.log(apiParams);
+      // 3. Выполняем запрос
+      const coordsResponse = await axios.get<HeatmapPoint[]>('/api/flights/coords', {
+        params: apiParams
+      });
+
+      // 4. Трансформируем данные в [[lon, lat, value]]
+      //    Как ты и просил, используем вес = 1
+      heatData = coordsResponse.data.map((point) => [
+        point.lon,
+        point.lat,
+        1 // Статический вес для каждой точки
+      ]);
+
+      console.log(`Heatmap points for ${selectedRegion.value} loaded:`, heatData.length);
+
+    } catch (coordsError) {
+      console.error('Failed to load heatmap coordinates:', coordsError);
+
+      // Оставляем heatData пустым, чтобы карта не падала
+    }
+    // ========================================================
+    // === КОНЕЦ БЛОКА ИЗМЕНЕНИЙ ===
+    // ========================================================
 
     // ДОБАВЛЕНО: Получаем экземпляр ECharts для consistency с событиями
     const chartInstance = getEChartsInstance();
@@ -374,14 +377,14 @@ const loadRegionMap = async () => {
         center: calculatedCenter,
         scaleLimit: { min: 10, max: 200 },  // Изменено: min 10, max 200 для дистрикт
         itemStyle: {
-          areaColor: 'transparent',
-          borderColor: '#ffffff',
-          borderWidth: 2
+          areaColor: '#1a1a1a',
+          borderColor: '#000000',
+          borderWidth: 1
         },
         select: {
         itemStyle: {
           areaColor: '#transparent',
-          borderColor: '#ffd54f',
+          borderColor: '#6d28d9',
           borderWidth: 2,
         },},
         label: {
@@ -452,7 +455,7 @@ const loadRegionMap = async () => {
       const zoom = option.geo[0].zoom as number;
       const heatmapOpacity = 1;
       const heatmapPointSize = 0.05 * zoom;
-      const heatmapBlurSize = 0.1 * zoom;
+      const heatmapBlurSize = 0.05 * zoom;
       chartInstance.setOption({
           series: [
             {
@@ -494,7 +497,6 @@ const refreshMap = () => {
         center: newCenter
       }
     });
-    fetchFlightData();
   }
 };
 
@@ -503,9 +505,15 @@ const goBack = () => {
   currentView.value = 'country';
 
   selectedDistrict.value = null;
-  if (chartRef.value) {
-    chartRef.value.setOption(getBaseMapOption('Russia'));
-    fetchFlightData();
+const chartInstance = getEChartsInstance();
+  if (chartInstance) {
+    // Сначала сбрасываем карту на Россию
+    chartInstance.setOption(getBaseMapOption('Russia'), { notMerge: true, lazyUpdate: true });
+
+    // И только после того, как DOM обновился, запрашиваем данные
+    nextTick(() => {
+      fetchFlightData();
+    });
   }
 };
 
