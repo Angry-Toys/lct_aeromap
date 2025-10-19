@@ -47,6 +47,7 @@ import * as echarts from 'echarts/core';
 import { MapChart, EffectScatterChart } from 'echarts/charts';
 import { TooltipComponent, VisualMapComponent, GeoComponent, TitleComponent } from 'echarts/components';
 import { HeatmapChart } from 'echarts/charts';
+import { ScatterChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 import VChart from 'vue-echarts';
 import axios from 'axios';
@@ -60,7 +61,8 @@ echarts.use([
   GeoComponent,
   TitleComponent,
   CanvasRenderer,
-  HeatmapChart
+  HeatmapChart,
+  ScatterChart
 ]);
 
 const isLoading = ref(false);
@@ -310,23 +312,23 @@ const loadRegionMap = async () => {
   try {
     const geoResponse = await axios.get(`/maps/districts/${selectedRegion.value}.geojson`);
     const geoData = geoResponse.data;
-    // Pre-process: set 'name' from 'district' for ECharts matching
     geoData.features.forEach((f: any) => {
       f.properties.name = f.properties.district || 'Unknown';
     });
     echarts.registerMap(selectedRegion.value, geoData);
     cachedGeo.value[selectedRegion.value] = geoData;
+    console.log('First district properties:', geoData.features[0]?.properties);
     const districtNames = geoData.features.map((f: any) => f.properties.name || 'Unknown');
+    console.log('District names extracted:', districtNames);
     const calculatedCenter = calculateCentroid(geoData);
-
-    // Generate mock heatData: random points inside polygons
+    console.log(`Calculated center for ${selectedRegion.value}:`, calculatedCenter);
     const heatData = [];
     geoData.features.forEach((feature: any) => {
       try {
-        const polygon = feature.geometry;  // Full geometry
+        const polygon = feature.geometry;
         for (let i = 0; i < 50; i++) {
           const point = randomPointInPolygon(polygon);
-          heatData.push([point[0], point[1], Math.random() * 10 + 1]);
+          heatData.push([point[0], point[1], Math.random() * 5 + 1]);  // Value 1-6 for gradient
         }
       } catch (e) {
         console.warn(`Skip heatmap for district ${feature.properties.district}: ${e.message}`);
@@ -338,74 +340,95 @@ const loadRegionMap = async () => {
         geo: {
           map: selectedRegion.value,
           roam: true,
-          zoom: 50.0,
+          zoom: 30,
           center: calculatedCenter,
-          scaleLimit: { min: 10, max: 200 },  // Изменено: min 10, max 200 для дистрикт режима
+          scaleLimit: { min: 10, max: 200 },  // Изменено: min 10, max 200 для дистрикт
           itemStyle: {
-            areaColor: 'rgba(0, 0, 0, 0)',
+            areaColor: 'transparent',
             borderColor: '#ffffff',
-            borderWidth: 2,
+            borderWidth: 2
           },
-          emphasis: {
-            itemStyle: {
-              areaColor: 'rgba(0, 0, 0, 0)',
-              borderColor: '#ffc107',
-              borderWidth: 2,
-            },
-            label: { show: false }
-          },
-          select: {
-            itemStyle: {
-              areaColor: 'rgba(0, 0, 0, 0)',
-              borderColor: '#ffd54f',
-              borderWidth: 2,
-            },
-            label: { show: true }
+          label: {
+            show: true,
+            formatter: '{name}',
+            color: '#000000',
+            fontSize: 14,
+            backgroundColor: '#ffffff',
+            padding: [2, 4]
           }
         },
-        tooltip: {
-          trigger: 'item',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          textStyle: { color: '#ffc107' },
-          formatter: '{b}: <strong>{c}</strong> полетов'
+        visualMap: {
+          show: false,
+          min: 0,
+          max: 5,
+          inRange: {
+            color: [
+              'rgba(33,102,172,0)',
+              'rgb(103,169,207)',
+              'rgb(209,229,240)',
+              'rgb(253,219,199)',
+              'rgb(239,138,98)',
+              'rgb(178,24,43)'
+            ]
+          }
         },
-        visualMap: null,
         series: [
-          {  // Heatmap below
+          {
             type: 'heatmap',
             coordinateSystem: 'geo',
             data: heatData,
-            pointSize: 5,
-            blurSize: 0.2,
-            minOpacity: 0.9,  // Increased for brighter
-            maxOpacity: 1,
-            gradientColor: [
-              { offset: 0, color: 'rgba(0, 191, 255, 1)' },  // Bright blue transparent
-              { offset: 0.5, color: 'rgba(255, 255, 0, 1)' },  // Vivid yellow
-              { offset: 1, color: 'rgba(255, 0, 0, 1)' }  // Bright red
-            ]
+            blurSize: 20,
+            pointSize: 20,
+            itemStyle: { opacity: 1 }
           },
-          {  // Borders over heatmap
+          {
+            type: 'scatter',
+            coordinateSystem: 'geo',
+            data: heatData,
+            symbolSize: (val) => val[2] * 2 + 3,  // 3–13 px
+            itemStyle: {
+              opacity: 0,
+              color: 'interpolate'  // Use visualMap gradient
+            }
+          },
+          {  // Borders layer, transparent no color
             name: 'Активность полетов',
             type: 'map',
             geoIndex: 0,
-            data: districtNames.map(name => ({ name })),  // No value — no color
+            data: districtNames.map(name => ({ name })),
             itemStyle: {
-              normal: {  // Explicit normal for no color
-                areaColor: 'rgba(0, 0, 0, 0)',
-                borderColor: '#ffffff',
-                borderWidth: 2
-              }
+              areaColor: 'transparent',
+              borderColor: '#ffffff',
+              borderWidth: 2
             },
             emphasis: {
               focus: 'self',
-              itemStyle: { areaColor: 'rgba(0, 0, 0, 0)', borderColor: '#ffc107', borderWidth: 2 },
+              itemStyle: { areaColor: 'transparent', borderColor: '#ffc107', borderWidth: 2 },
               label: { show: true }
             }
           }
         ]
       });
-      //await fetchFlightData();
+      // Dynamic zoom effect
+      chartRef.value.on('georoam', () => {
+        const zoom = chartRef.value.getOption().geo[0].zoom;
+        const heatmapOpacity = 1;
+        const scatterOpacity = 0;
+        const heatmapPointSize = Math.max(1, 1 * zoom);
+        const heatmapBlurSize = Math.max(1, 5 * zoom);
+        chartRef.value.setOption({
+          series: [
+            {
+              type: 'heatmap',
+              itemStyle: { opacity: heatmapOpacity },
+              pointSize: heatmapPointSize,
+              blurSize: heatmapBlurSize
+            },
+            { type: 'scatter', itemStyle: { opacity: scatterOpacity } }
+          ]
+        });
+      });
+      await fetchFlightData();
     }
   } catch (error) {
     console.error(`Ошибка загрузки GeoJSON для ${selectedRegion.value}:`, error);
