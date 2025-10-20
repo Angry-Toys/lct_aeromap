@@ -374,6 +374,7 @@ def get_metrics():
         with engine.connect() as conn:
             df = pd.read_sql(text(base_query), conn, params=params)
         if df.empty:
+            print(base_query)
             return jsonify({"error": "No metrics available"}), 404
 
         if group_by == 'customers':
@@ -394,10 +395,14 @@ def get_metrics():
             area_km2=('area_km2', 'max')
         ).reset_index()
         metrics_df['flight_density'] = metrics_df['flight_count'] / metrics_df['area_km2']
-        # Peak hourly
-        df['dep_datetime'] = pd.to_datetime(df['dep_date'].astype(str) + ' ' + df['dep_time'].astype(str))
-        df['hour'] = df['dep_datetime'].dt.floor('H')
-        metrics_df['peak_load_hourly'] = df.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
+        # Peak hourly: Фильтруем строки с dep_time IS NOT NULL
+        df_time = df[df['dep_time'].notnull()].copy()
+        if not df_time.empty:
+            df_time['dep_datetime'] = pd.to_datetime(df_time['dep_date'].astype(str) + ' ' + df_time['dep_time'].astype(str))
+            df_time['hour'] = df_time['dep_datetime'].dt.floor('H')
+            metrics_df['peak_load_hourly'] = df_time.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
+        else:
+            metrics_df['peak_load_hourly'] = 0
         # Daily stats
         daily_counts = df.groupby(['region', 'dep_date'])['flight_id'].count().reset_index(name='daily_count')
         metrics_df = metrics_df.merge(daily_counts.groupby('region')['daily_count'].agg(['mean', 'median']).reset_index(), on='region')
@@ -449,7 +454,6 @@ def get_metrics():
     except Exception as e:
         app.logger.error(f"Error in metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 
 @bp.route('/metrics/operators', methods=['GET'])
 def get_operators_metrics():

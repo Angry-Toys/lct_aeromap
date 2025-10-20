@@ -5,13 +5,13 @@
         <div class="icon-wrapper">
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
+            viewBox="0 0 64 64"
             fill="currentColor"
             class="geo-icon"
           >
             <path
               fill-rule="evenodd"
-              d="M11.54 22.351l.01.01a.75.75 0 001.9 0l.01-.01c.97-.97 2.65-3.19 3.92-6.08a17.39 17.39 0 001.74-6.86c0-4.69-3.81-8.5-8.5-8.5s-8.5 3.81-8.5 8.5c0 2.57.93 4.93 2.47 6.74 1.27 2.89 2.95 5.11 3.92 6.08zm.96-18.1a4 4 0 100 8 4 4 0 000-8z"
+              d="M32,0C18.746,0,8,10.746,8,24c0,5.219,1.711,10.008,4.555,13.93c0.051,0.094,0.059,0.199,0.117,0.289l16,24  C29.414,63.332,30.664,64,32,64s2.586-0.668,3.328-1.781l16-24c0.059-0.09,0.066-0.195,0.117-0.289C54.289,34.008,56,29.219,56,24  C56,10.746,45.254,0,32,0z M32,32c-4.418,0-8-3.582-8-8s3.582-8,8-8s8,3.582,8,8S36.418,32,32,32z"
               clip-rule="evenodd"
             />
           </svg>
@@ -23,11 +23,11 @@
       </div>
       <div class="customer-info">
         <p class="label">Заказчик</p>
-        <div class="customer-name-wrapper">
+        <!-- <div class="customer-name-wrapper"> -->
           <p class="customer-name">
             {{ props.filters.customer || 'Все заказчики' }}
           </p>
-        </div>
+        <!-- </div> -->
       </div>
       <div class="date-group">
         <p class="label">Период</p>
@@ -151,7 +151,7 @@ const formattedMissingRange = computed(() => {
   /* Стиль текста: жирный, белый */
   font-size: 1.5rem;
   line-height: 1.75rem;
-  font-weight: 800; /* Очень жирный, как в логотипе */
+  font-weight: 700; /* Очень жирный, как в логотипе */
   margin: 0;
   white-space: nowrap;
   max-width: 300px;
@@ -163,6 +163,7 @@ const formattedMissingRange = computed(() => {
   background: none;
   -webkit-background-clip: unset;
   -webkit-text-fill-color: unset;
+  margin: 0 10px;
 }
 
 .region-group {
