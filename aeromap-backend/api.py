@@ -8,7 +8,8 @@ from shapely.geometry import Point
 from fiona import Env
 from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
-from flask import Flask, jsonify, send_file, make_response, request, redirect
+from flask import Flask, jsonify, send_file, make_response, request, redirect, g
+from flask import session   
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
 from flask import Blueprint
@@ -21,30 +22,36 @@ from logging.handlers import RotatingFileHandler
 import os
 from sklearn.linear_model import LinearRegression
 import numpy as np
+from werkzeug.exceptions import Unauthorized
+from werkzeug.middleware.proxy_fix import ProxyFix
+from sklearn.cluster import DBSCAN
+import numpy as np
+from authlib.integrations.flask_client import OAuthError
 
 app = Flask(__name__)
-CORS(app, origins=['*'])  
-
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False 
+app.config['SESSION_COOKIE_DOMAIN'] = None
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+CORS(app, origins=['*']) 
+OIDC_ISSUER_URL = os.getenv('OIDC_ISSUER', 'http://keycloak:8080/realms/aviation-realm')
+HOST_MAPPING = 'keycloak:8080'
+PUBLIC_HOST = 'localhost:8080'
 app.config.update({
     'OIDC_CLIENT_SECRETS': {  
         'web': {
-            'client_id': os.getenv('OIDC_CLIENT_ID', 'your-client-id'),
-            'client_secret': os.getenv('OIDC_CLIENT_SECRET', 'your-secret'),
-            'issuer': os.getenv('OIDC_ISSUER', 'https://your-keycloak/auth/realms/your-realm'),
-            'auth_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/auth',
-            'token_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/token',
-            'userinfo_uri': os.getenv('OIDC_ISSUER') + '/protocol/openid-connect/userinfo',
-            'redirect_uris': ['http://localhost:5000/oidc_callback'],  
-            'post_logout_redirect_uris': ['http://localhost:5000/'],
+            'client_id': os.getenv('OIDC_CLIENT_ID', 'aviation-api'),
+            'client_secret': os.getenv('OIDC_CLIENT_SECRET', '8HUnPbB26kdCImTFXLfN9scQLQmYLW4d'),
+            'issuer': OIDC_ISSUER_URL, 
+            'OIDC_VALID_ISSUERS': ['http://keycloak:8080/realms/aviation-realm', 'http://localhost:8080/realms/aviation-realm'],
+
+            'leeway': 60
         }
     },
-    'OIDC_COOKIE_SECURE': False, 
-    'OIDC_USER_INFO_ENABLED': True,
-    'OIDC_OPENID_REALM': 'your-realm',
-    'OIDC_SCOPES': ['openid', 'email', 'profile'],
-    'OIDC_INTROSPECTION_AUTH_METHOD': 'client_secret_post',
     'OVERWRITE_REDIRECT_URI': 'http://localhost:5000/oidc_callback',  
-    'SECRET_KEY': os.getenv('SECRET_KEY', 'your-secret-key')  
+    'SECRET_KEY': os.getenv('SECRET_KEY', 'your-secret-key'),
+    'SESSION_COOKIE_SAMESITE': 'Lax',
+    'SESSION_COOKIE_SECURE': False,
 })
 
 oidc = OpenIDConnect(app)
@@ -225,7 +232,10 @@ def get_region(lat, lon, gdf):
     return None
 
 @bp.route('/upload', methods=['POST'])
+#@oidc.accept_token()
 def upload_file():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         if 'file' not in request.files:
             return jsonify({"error": "No file part"}), 400
@@ -280,8 +290,10 @@ def upload_file():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/webhook', methods=['POST'])
-@oidc.accept_token(require_token=True)
+#@oidc.accept_token()
 def webhook():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         data = request.json
         if not data or 'flights' not in data:
@@ -314,8 +326,10 @@ def webhook():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/report/export', methods=['GET'])
-@oidc.accept_token(require_token=True)
+#@oidc.accept_token()
 def export_report():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         with engine.connect() as conn:
             flights_df = pd.read_sql("SELECT * FROM flights;", conn)
@@ -374,7 +388,6 @@ def get_metrics():
         with engine.connect() as conn:
             df = pd.read_sql(text(base_query), conn, params=params)
         if df.empty:
-            print(base_query)
             return jsonify({"error": "No metrics available"}), 404
 
         if group_by == 'customers':
@@ -456,7 +469,10 @@ def get_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/operators', methods=['GET'])
+#@oidc.accept_token()
 def get_operators_metrics():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         with engine.connect() as conn:
             df = pd.read_sql("SELECT operator, flight_id, duration_min FROM flights WHERE operator IS NOT NULL;", conn)
@@ -473,7 +489,10 @@ def get_operators_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/types', methods=['GET'])
+#@oidc.accept_token()
 def get_types_metrics():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         with engine.connect() as conn:
             df = pd.read_sql("SELECT type, flight_id, duration_min FROM flights WHERE type IS NOT NULL;", conn)
@@ -490,7 +509,10 @@ def get_types_metrics():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/metrics/total', methods=['GET'])
+#@oidc.accept_token()
 def get_total_metrics():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         with engine.connect() as conn:
             df = pd.read_sql("SELECT flight_id, duration_min FROM flights;", conn)
@@ -500,7 +522,8 @@ def get_total_metrics():
         total_flights = len(df)
         avg_duration = df['duration_min'].mean()
         total_duration = df['duration_min'].sum()
-        total_density = total_flights / metrics_df['total_area_km2'].iloc[0] if metrics_df['total_area_km2'].iloc[0] > 0 else 0
+        total_area = metrics_df['total_area_km2'].iloc[0] if not metrics_df.empty else 0
+        total_density = total_flights / total_area if total_area > 0 else 0
         return jsonify({
             "total_flights": total_flights,
             "avg_duration_min": avg_duration,
@@ -511,31 +534,36 @@ def get_total_metrics():
         app.logger.error(f"Error in total metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+    
 @bp.route('/metrics/customers', methods=['GET'])
-def get_customers_metrics():
+@oidc.require_login
+def get_customers_list():
+    if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        raise Unauthorized("Missing or invalid authorization token")
     try:
         with engine.connect() as conn:
-            df = pd.read_sql("SELECT customer, flight_id, duration_min FROM flights WHERE customer IS NOT NULL;", conn)
+            df = pd.read_sql("SELECT DISTINCT customer FROM flights WHERE customer IS NOT NULL;", conn)
         if df.empty:
-            return jsonify({"error": "No data"}), 404
-        metrics = df.groupby('customer').agg({
-            'flight_id': 'count',
-            'duration_min': ['mean', 'sum']
-        }).reset_index()
-        metrics.columns = ['customer', 'flight_count', 'avg_duration_min', 'total_duration_min']
-        metrics = metrics.sort_values('flight_count', ascending=False)
-        return jsonify(metrics.to_dict(orient='records')), 200
+            return jsonify([]), 200
+        df['customer'] = df['customer'].apply(lambda x: re.sub(r'\+\d{10,}', '', x).strip() if x else x)
+        customers = df['customer'].tolist()
+        return jsonify(customers), 200
     except Exception as e:
-        app.logger.error(f"Error in customers metrics: {str(e)}")
+        app.logger.error(f"Error in customers list: {str(e)}")
         return jsonify({"error": str(e)}), 500
     
 @bp.route('/flights/coords', methods=['GET'])
+#@oidc.accept_token()
 def get_flights_coords():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         year = request.args.get('year')
         month = request.args.get('month')
         region = request.args.get('region')
-        limit = int(request.args.get('limit', 5000))
+        limit = int(request.args.get('limit', 5000)) 
+        cluster_eps = float(request.args.get('cluster_eps', 0.05)) 
+
         sql = """
             SELECT dep_lat AS lat, dep_lon AS lon, 
                    COALESCE(duration_min, 1) AS intensity 
@@ -554,17 +582,45 @@ def get_flights_coords():
             params['region'] = region
         sql += " LIMIT :limit;"
         params['limit'] = limit
+
         with engine.connect() as conn:
             df = pd.read_sql(text(sql), conn, params=params)
+
         if df.empty:
             return jsonify([])
+
+        coords = df[['lat', 'lon']].values
+        if len(coords) > 1:
+            radians = np.deg2rad(coords)
+            db = DBSCAN(eps=cluster_eps / 6371.0, min_samples=1, algorithm='ball_tree', metric='haversine') 
+            labels = db.fit_predict(radians)
+
+            aggregated = []
+            for label in np.unique(labels):
+                if label == -1: continue 
+                cluster_df = df[labels == label]
+                agg_lat = cluster_df['lat'].mean()
+                agg_lon = cluster_df['lon'].mean()
+                count = len(cluster_df)
+                agg_intensity = cluster_df['intensity'].sum()
+                aggregated.append({
+                    'lat': agg_lat,
+                    'lon': agg_lon,
+                    'count': count,
+                    'intensity': agg_intensity
+                })
+            return jsonify(aggregated), 200
+
         return jsonify(df.to_dict(orient='records')), 200
     except Exception as e:
         app.logger.error(f"Error in flights/coords: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/regions/flights', methods=['GET'])
+#@oidc.accept_token()
 def get_regions_flights():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         from_str = request.args.get('from')
         to_str = request.args.get('to')
@@ -601,7 +657,10 @@ def get_regions_flights():
         return jsonify({"error": str(e)}), 500
     
 @bp.route('/compare', methods=['GET'])
+#@oidc.accept_token()
 def compare_periods():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         year1 = request.args.get('year1')
         month1 = request.args.get('month1')
@@ -651,7 +710,10 @@ def compare_periods():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/forecast', methods=['GET'])
+#@oidc.accept_token()
 def forecast_period():
+    #if 'authlib_server_oauth2_token' not in g or g.authlib_server_oauth2_token is None:
+        #raise Unauthorized("Missing or invalid authorization token")
     try:
         year = int(request.args.get('year', 2025))
         month = request.args.get('month')  
@@ -697,6 +759,77 @@ def forecast_period():
     except Exception as e:
         app.logger.error(f"Error in forecast: {str(e)}")
         return jsonify({"error": str(e)}), 500
+    
+from authlib.integrations.flask_client import OAuthError  # Добавьте импорт если нужно
+
+@app.route('/auth/login')
+def login():
+    try:
+        redirect_uri = app.config.get('OVERWRITE_REDIRECT_URI', 'http://localhost:5000/oidc_callback')
+        auth_uri, state = oidc.client.create_authorization_url(  # Изменено на oidc.client
+            oidc.client.metadata['authorization_endpoint'],
+            redirect_uri=redirect_uri,
+            scope='openid profile email'  # Scopes по нужде, настройте в Keycloak
+        )
+        auth_uri = auth_uri.replace('keycloak:8080', 'localhost:8080')  # Замена host для browser
+        session['oidc_state'] = state  # Защита от CSRF
+        return redirect(auth_uri)
+    except OAuthError as e:
+        app.logger.error(f"OAuth error in login: {str(e)}")
+        return jsonify({"error": "Authentication failed", "details": str(e)}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in login: {str(e)}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+@app.route('/oidc_callback')
+def oidc_callback():
+    if 'error' in request.args:
+        return jsonify({"error": request.args['error']}), 400
+
+    if 'code' not in request.args:
+        return jsonify({"error": "No authorization code"}), 400
+
+    # Проверка state против CSRF
+    if session.get('oidc_state') != request.args.get('state'):
+        return jsonify({"error": "Invalid state parameter"}), 403
+
+    try:
+        # Обмен code на token
+        token = oidc.client.authorize_access_token(  # Изменено на oidc.client
+            request.url,  # Полный callback URL
+            code=request.args['code'],
+            redirect_uri=app.config['OVERWRITE_REDIRECT_URI']
+        )
+        # Получение userinfo
+        userinfo = oidc.client.userinfo(token=token['access_token'])  # Изменено на oidc.client
+        session['oidc_token'] = token
+        session['userinfo'] = userinfo
+        session.pop('oidc_state', None)  # Очистка
+        app.logger.info("Successful login")
+        # Для теста API: Вернуть token (в prod — redirect('/'))
+        return jsonify({
+            "message": "Logged in",
+            "access_token": token['access_token'],
+            "refresh_token": token.get('refresh_token'),
+            "userinfo": userinfo
+        })
+    except OAuthError as e:
+        app.logger.error(f"OAuth error in callback: {str(e)}")
+        return jsonify({"error": "Token exchange failed", "details": str(e)}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in callback: {str(e)}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+@app.route('/auth/logout')
+def logout():
+    oidc.logout()
+    return redirect('/')
+
+@app.route('/')
+def index():
+    if 'oidc_token' in session:
+        return jsonify({"message": "Logged in", "userinfo": session.get('userinfo')})
+    return jsonify({"message": "Welcome, please login"}), 200
         
 app.register_blueprint(bp)
 
