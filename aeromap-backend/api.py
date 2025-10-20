@@ -343,41 +343,114 @@ def get_metrics():
     try:
         year = request.args.get('year')
         month = request.args.get('month')
-        sql = "SELECT * FROM metrics;"
+        region = request.args.get('region')
+        group_by = request.args.get('group_by', 'regions')  # Default: regions; alternative: customers
+
+        if group_by not in ['regions', 'customers']:
+            return jsonify({"error": "Invalid group_by (regions or customers)"}), 400
+
+        # Base query с фильтрами
+        base_query = """
+            SELECT f.region, f.customer, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
+            FROM flights f
+            JOIN metrics m ON f.region = m.region
+        """
+        where_parts = []
         params = {}
-        if year or month:
-            sql_flights = "SELECT * FROM flights WHERE 1=1"
-            if year:
-                sql_flights += " AND EXTRACT(YEAR FROM dep_date) = :year"
-                params['year'] = int(year)
-            if month:
-                sql_flights += " AND EXTRACT(MONTH FROM dep_date) = :month"
-                params['month'] = int(month)
-            with engine.connect() as conn:
-                df = pd.read_sql(text(sql_flights), conn, params=params)
-            if df.empty:
-                return jsonify({"error": "No data for filters"}), 404
-            metrics = df.groupby('region').agg({
+        if year:
+            where_parts.append("f.dep_date::text LIKE :year")
+            params['year'] = f"{year}%"
+        if month:
+            where_parts.append("f.dep_date::text LIKE :month")
+            params['month'] = f"%-{month}-%"
+        if region:
+            where_parts.append("f.region = :region")
+            params['region'] = region
+        if group_by == 'customers':
+            where_parts.append("f.customer IS NOT NULL")
+        if where_parts:
+            base_query += " WHERE " + " AND ".join(where_parts)
+        base_query += ";"
+        with engine.connect() as conn:
+            df = pd.read_sql(text(base_query), conn, params=params)
+        if df.empty:
+            return jsonify({"error": "No metrics available"}), 404
+
+        if group_by == 'customers':
+            df['customer'] = df['customer'].apply(lambda x: re.sub(r'\+\d{10,}', '', x).strip() if x else x)
+            metrics = df.groupby('customer').agg({
                 'flight_id': 'count',
                 'duration_min': ['mean', 'sum']
             }).reset_index()
-            metrics.columns = ['region', 'flight_count', 'avg_duration_min', 'total_duration_min']
-            with Env(SHAPE_RESTORE_SHX='YES'):
-                gdf = gpd.read_file(SHAPEFILE_PATH)
-            if gdf.crs != 'EPSG:4326':
-                gdf = gdf.to_crs('EPSG:4326')
-            gdf_area = gdf.to_crs('EPSG:3395')
-            gdf_area['area_km2'] = gdf_area.geometry.area / 10**6
-            metrics = metrics.merge(gdf_area[['name_ru', 'area_km2']], left_on='region', right_on='name_ru', how='left')
-            metrics['flight_density'] = metrics['flight_count'] / metrics['area_km2']
+            metrics.columns = ['customer', 'flight_count', 'avg_duration_min', 'total_duration_min']
+            metrics = metrics.sort_values('flight_count', ascending=False)
             return jsonify(metrics.to_dict(orient='records')), 200
-        else:
+
+        # Original logic for regions
+        metrics_df = df.groupby('region').agg(
+            flight_count=('flight_id', 'count'),
+            avg_duration_min=('duration_min', 'mean'),
+            total_duration_min=('duration_min', 'sum'),
+            area_km2=('area_km2', 'max')
+        ).reset_index()
+        metrics_df['flight_density'] = metrics_df['flight_count'] / metrics_df['area_km2']
+        # Peak hourly
+        df['dep_datetime'] = pd.to_datetime(df['dep_date'].astype(str) + ' ' + df['dep_time'].astype(str))
+        df['hour'] = df['dep_datetime'].dt.floor('H')
+        metrics_df['peak_load_hourly'] = df.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
+        # Daily stats
+        daily_counts = df.groupby(['region', 'dep_date'])['flight_id'].count().reset_index(name='daily_count')
+        metrics_df = metrics_df.merge(daily_counts.groupby('region')['daily_count'].agg(['mean', 'median']).reset_index(), on='region')
+        metrics_df = metrics_df.rename(columns={'mean': 'avg_daily_flights', 'median': 'median_daily_flights'})
+        metrics_df = metrics_df.sort_values(by='flight_count', ascending=False)
+        # Growth
+        if month:
+            prev_month = int(month) - 1 if int(month) > 1 else 12
+            prev_year = year if prev_month != 12 else str(int(year) - 1)
+            prev_params = {'prev_year': f"{prev_year}%", 'prev_month': f"%-{str(prev_month).zfill(2)}-%"}
+            prev_base = """
+                SELECT f.region, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
+                FROM flights f
+                JOIN metrics m ON f.region = m.region
+                WHERE f.dep_date::text LIKE :prev_year AND f.dep_date::text LIKE :prev_month;
+            """
             with engine.connect() as conn:
-                metrics_df = pd.read_sql(sql, conn)
-            return jsonify(metrics_df.to_dict(orient='records')), 200
+                prev_df = pd.read_sql(text(prev_base), conn, params=prev_params)
+            if not prev_df.empty:
+                prev_counts = prev_df.groupby('region')['flight_id'].count().reset_index(name='flight_count_prev')
+                metrics_df = metrics_df.merge(prev_counts, on='region', how='left')
+                metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev'].fillna(0)) / metrics_df['flight_count_prev'].fillna(1)) * 100
+        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights WHERE dep_time IS NOT NULL GROUP BY hour;"
+        with engine.connect() as conn:
+            hourly_df = pd.read_sql(hourly_query, conn)
+        metrics_df['hourly_distribution'] = [hourly_df.to_dict(orient='records')] * len(metrics_df)
+        zero_days_query = """
+            SELECT m.region, COUNT(*) as zero_days
+            FROM metrics m
+            LEFT JOIN (
+                SELECT generate_series(
+                    COALESCE(MIN(dep_date), CURRENT_DATE),
+                    COALESCE(MAX(dep_date), CURRENT_DATE),
+                    '1 day'::interval
+                ) as day
+                FROM flights
+                WHERE dep_date IS NOT NULL
+            ) days ON TRUE
+            LEFT JOIN flights f ON days.day = f.dep_date AND f.region = m.region
+            WHERE f.flight_id IS NULL
+            GROUP BY m.region;
+        """
+        with engine.connect() as conn:
+            zero_df = pd.read_sql(zero_days_query, conn)
+        metrics_df = metrics_df.merge(zero_df, on='region', how='left').fillna({'zero_days': 0})
+        response = jsonify(metrics_df.to_dict(orient='records'))
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        return response
     except Exception as e:
         app.logger.error(f"Error in metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
 @bp.route('/metrics/operators', methods=['GET'])
 def get_operators_metrics():
     try:

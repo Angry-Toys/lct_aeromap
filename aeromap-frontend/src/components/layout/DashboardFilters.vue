@@ -18,7 +18,7 @@
         :class="{ 'mode-active': filterMode === 'dateRange' }"
         @click="setFilterMode('dateRange')"
       >
-        Date Range
+        Диапазон дат
       </button>
       <button
         class="mode-btn"
@@ -26,7 +26,7 @@
         :class="{ 'mode-active': filterMode === 'period' }"
         @click="setFilterMode('period')"
       >
-        Period
+        Период
       </button>
     </div>
 
@@ -37,7 +37,7 @@
 
         <!-- From Date -->
         <div class="input-group">
-          <label for="from-date" class="input-label">From Date</label>
+          <label for="from-date" class="input-label">Начиная с даты</label>
           <div class="input-wrapper">
             <input
               id="from-date"
@@ -53,7 +53,7 @@
 
         <!-- To Date -->
         <div class="input-group">
-          <label for="to-date" class="input-label">To Date</label>
+          <label for="to-date" class="input-label">Заканчивая датой</label>
           <div class="input-wrapper">
             <input
               id="to-date"
@@ -163,6 +163,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, onMounted, watch, nextTick } from 'vue';
+import api from '@/utils/api';
 
 const emit = defineEmits(['filters-updated']);
 
@@ -223,22 +224,27 @@ interface Customer {
 const customers = ref<Customer[]>([]);
 
 const fetchCustomers = async () => {
+  console.log('Fetching customers from API: /api/customers/list');
   try {
-    // !!! ЗАМЕНИТЬ НА РЕАЛЬНЫЙ ЗАПРОС !!!
-    // const response = await api.get('/api/customers');
-    // customers.value = response.data;
+    // Используем placeholder API для получения списка заказчиков
+    const response = await api.get('/api/customers/list');
 
-    // --- Моковые данные ---
-    console.warn('Using MOCK customer list');
+    // Предполагаем, что ответ - это массив объектов,
+    // где каждый элемент имеет поля id и name.
+    customers.value = response.data.map((item: any) => ({
+      id: item.id || item.name,
+      name: item.name,
+    }));
+
+    console.log(`✅ Customers loaded: ${customers.value.length} items`);
+  } catch (error) {
+    console.error('Ошибка при загрузке списка заказчиков:', error);
+    // На случай ошибки, вернем хотя бы минимальный список для тестирования
     customers.value = [
-      { id: 'customer_1', name: 'Газпром' },
-      { id: 'customer_2', name: 'Роснефть' },
-      { id: 'customer_3', name: 'МЧС' },
+      { id: 'gazprom', name: 'Газпром' },
+      { id: 'rosneft', name: 'Роснефть' },
+      { id: 'rosatom', name: 'Росатом' },
     ];
-    // --- Конец мока ---
-
-  } catch (e) {
-    console.error('Failed to fetch customers', e);
   }
 };
 // === КОНЕЦ БЛОКА ===
@@ -392,6 +398,18 @@ onMounted(() => {
   transition: color 0.3s ease;
   position: relative;
   z-index: 2;
+  font-family: Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Fira Sans',
+    'Droid Sans',
+    'Helvetica Neue',
+    sans-serif !important;
 }
 
 .mode-btn:hover {
@@ -430,6 +448,7 @@ onMounted(() => {
   font-weight: 500;
   margin-bottom: 8px;
   white-space: nowrap;
+
 }
 
 .input-wrapper {

@@ -102,7 +102,7 @@ interface GrowthData {
 const isModalVisible = ref(false);
 const isLoadingMetrics = ref(true);
 const componentKey = ref(0);
-const selectedRegion = ref<string>('Russian Federation');
+const selectedRegion = ref<string>('Российская Федерация');
 const selectedDistrict = ref<string | null>(null);
 
 const missingMonths = ref<string[]>([]);
@@ -292,222 +292,141 @@ const getMonthsInRange = (from: string, to: string) => {
 const daysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
 
 const fetchDataForSidebar = async () => {
+  // Сброс метрик перед загрузкой
+  metrics.totalFlights = null;
+  metrics.avgDuration = null;
+  metrics.peakLoad = null;
+  metrics.flightDensity = null;
+  metrics.zeroDays = null;
+  metrics.growthPercent = null;
+  metrics.hourlyDistribution = null;
+  growthPercentData.value = [];
+  missingMonths.value = [];
   isLoadingMetrics.value = true;
+
+  // --- 1. СБОР ПАРАМЕТРОВ ---
+  const from = activeFilters.value.from || '2025-01-01';
+  const to = activeFilters.value.to || '2025-12-31';
+  const selected = selectedRegion.value;
+  const selectedDistrictLocal = selectedDistrict.value;
+  const customer = activeFilters.value.customer;
+  const isAllRussia = selected === 'Российская Федерация';
+  const apiPath = isAllRussia ? '/api/metrics/customers' : `/api/metrics/customers/${selected}`;
+
+  const params = {
+    from,
+    to,
+    customer: customer || undefined, // undefined, чтобы не отправлять 'null'
+  };
+
+  // --- 2. ЛОГ НАЧАЛА ---
+  console.group('📡 Запрос метрик: fetchDataForSidebar');
+  console.info(`🎯 API Endpoint: ${apiPath}`);
+  console.log('➡️ Фильтры:', { region: selected, period: { from, to }, customer: customer || 'Все' });
+  console.log('➡️ Параметры запроса (Query Params):', params);
+
+  // --- 3. ЗАГЛУШКИ ---
+  if (selectedDistrictLocal) {
+    console.warn(`⚠️ Заглушка: Данные по району ${selectedDistrictLocal} не найдены.`);
+    isLoadingMetrics.value = false;
+    console.groupEnd();
+    return;
+  }
+
+  if (isAllRussia) {
+    console.warn('⚠️ Заглушка: Логика для Russian Federation (агрегация/особый кейс) не реализована. Продолжаю выполнять запрос к API.');
+    // Если есть специальная заглушка или сброс для "Вся Россия", он должен быть тут.
+  }
+
   try {
-    const from = activeFilters.value.from || '2025-01-01';
-    const to = activeFilters.value.to || '2025-12-31';
-    const selected = selectedRegion.value;
-    const selectedDistrictLocal = selectedDistrict.value;
+    // --- 4. ВЫЗОВ API ---
+    const response = await axios.get(apiPath, { params });
+    console.log(`✅ Успешный ответ (HTTP 200). Тип данных до обработки:`, typeof response.data);
+    let data = response.data;
 
-    if (selectedDistrictLocal) {
-      console.warn(`⚠️ Заглушка для района: ${selectedDistrictLocal} в ${selected}. Данные не найдены`);
-      metrics.totalFlights = null;
-      metrics.avgDuration = null;
-      metrics.peakLoad = null;
-      metrics.flightDensity = null;
-      metrics.zeroDays = null;
-      metrics.growthPercent = null;
-      metrics.hourlyDistribution = null;
-      growthPercentData.value = [];
-      missingMonths.value = [];
-      isLoadingMetrics.value = false;
-      return;
-    }
+    // ⚠️ КОРРЕКЦИЯ: ИСПРАВЛЕНИЕ ОШИБКИ NaN В JSON
+    if (typeof data === 'string' && data.length > 0) {
+        // 1. Санитаризация: JSON не поддерживает NaN. Заменяем его на null.
+        // Используем регулярное выражение /NaN/g, чтобы заменить ВСЕ вхождения.
+        const sanitizedString = data.replace(/NaN/g, 'null');
 
-    const isAllRussia = selected === 'Russian Federation';
-    console.log('🚀 Загрузка метрик:', { region: selected, period: { from, to } });
-
-    if (isAllRussia) {
-      console.warn('⚠️ Заглушка для региона Russian Federation: Данные не найдены');
-      metrics.totalFlights = null;
-      metrics.avgDuration = null;
-      metrics.peakLoad = null;
-      metrics.flightDensity = null;
-      metrics.zeroDays = null;
-      metrics.growthPercent = null;
-      metrics.hourlyDistribution = null;
-      growthPercentData.value = [];
-      return;
-    }
-
-    // Получаем список месяцев
-    const months = getMonthsInRange(from, to);
-    missingMonths.value = [];
-    growthPercentData.value = [];
-
-    // Параллельные вызовы /metrics для каждого месяца
-    const promises = months.map(async ({ year, month }, index) => {
-      const params: any = { year: String(year), month };
-      if (selected) {
-        params.region = selected;
-      }
-      // === ДОБАВЛЕНО: Передаем customer в /api/metrics ===
-      if (activeFilters.value.customer) {
-        params.customer = activeFilters.value.customer;
-      }
-      // === КОНЕЦ БЛОКА ===
-
-      const url = `/api/metrics?${new URLSearchParams(params).toString()}`;
-      //console.log(`📡 Запрос ${index + 1}/${months.length}:`, { url, params });
-      try {
-        const response = await axios.get('/api/metrics', { params });
-        //console.log(`✅ Ответ для ${url}:`, response.data);
-        let data = response.data;
-        if (!Array.isArray(data)) {
-          //console.warn(`⚠️ Ответ для ${year}-${month} не массив, преобразую в массив:`, data);
-          data = [data];
+        try {
+            data = JSON.parse(sanitizedString);
+            console.log('🔄 Успешный принудительный парсинг JSON после санитаризации (NaN -> null).');
+        } catch (e) {
+            console.error('❌ Ошибка при попытке парсинга строки в JSON (даже после санитаризации):', e);
+            // Если парсинг не удался, сбрасываем данные
+            data = null;
         }
-        if (data.length === 0) {
-          //.warn(`⚠️ Пустой ответ для ${year}-${month}, добавляем в missingMonths`);
-          missingMonths.value.push(`${year}-${month}`);
+    }
+
+    let finalMetricsData: any = {};
+
+    // --- 5. ОБРАБОТКА И АГРЕГАЦИЯ ДАННЫХ ---
+    if (Array.isArray(data)) {
+        // Кейс: выбран 'Все' заказчики, и API вернул массив объектов
+        console.info(`🔄 Агрегация: Получен массив из ${data.length} объектов заказчиков.`);
+
+        // Суммирование
+        const totals = data.reduce((acc, item) => {
+            acc.flight_count += item.flight_count || 0;
+            acc.total_duration_min += item.total_duration_min || 0;
+            return acc;
+        }, { flight_count: 0, total_duration_min: 0 });
+
+        finalMetricsData.flight_count = totals.flight_count;
+        finalMetricsData.avg_duration_min = totals.flight_count > 0
+                    ? parseFloat((totals.total_duration_min / totals.flight_count).toFixed(2))
+                    : 0;
+
+        // Сложные метрики берем из первого элемента, если они есть
+        if (data.length > 0) {
+            finalMetricsData = { ...finalMetricsData, ...data[0] };
+        } else {
+             // Если массив пуст
+            finalMetricsData = {};
         }
-        //console.log(`📊 Обработанные данные для ${year}-${month}:`, data);
-        return { data, month: `${year}-${month}` };
-      } catch (error: any) {
-        console.error(`❌ Ошибка для ${url}:`, {
-          params,
-          error: error.message,
-          response: error.response?.data || 'Нет данных ответа',
-        });
-        missingMonths.value.push(`${year}-${month}`);
-        return { data: [], month: `${year}-${month}` };
-      }
-    });
 
-    const monthResponses = await Promise.all(promises);
-    const numDataMonths = monthResponses.filter(({ data }) => data.length > 0).length;
-    const allRegionsData = monthResponses.flatMap(response => response.data);
-    console.log('📥 Все данные по регионам:', { count: allRegionsData.length, data: allRegionsData });
+    } else if (data && typeof data === 'object') {
+        // Кейс: выбран конкретный заказчик, или API вернул один агрегированный объект
+        finalMetricsData = data;
+        console.info('✅ Агрегация: Получен один объект с агрегированными данными.');
+    } else {
+        // Кейс: пустой ответ, null или примитив
+        console.warn('⚠️ Ответ от API не является объектом или массивом данных.');
+        finalMetricsData = {};
+    }
 
-    if (allRegionsData.length === 0) {
-      //console.warn('⚠️ Нет данных от API /metrics. Устанавливаем метрики в null.');
-      metrics.totalFlights = null;
+    // --- 6. ПРИСВОЕНИЕ МЕТРИК ---
+    metrics.totalFlights = finalMetricsData.flight_count ?? null;
+    if (finalMetricsData.avg_duration_min !== undefined && finalMetricsData.avg_duration_min !== null) {
+      metrics.avgDuration = parseFloat(finalMetricsData.avg_duration_min.toFixed(2)); // Округление до 2 знаков
+    } else {
       metrics.avgDuration = null;
-      metrics.peakLoad = null;
-      metrics.flightDensity = null;
-      metrics.zeroDays = null;
-      metrics.growthPercent = null;
-      metrics.hourlyDistribution = null;
-      growthPercentData.value = [];
-      return;
     }
+    metrics.growthPercent = finalMetricsData.growth_percent ?? null;
+    metrics.peakLoad = finalMetricsData.peak_load ?? null;
+    metrics.flightDensity = finalMetricsData.flight_density ?? null;
+    metrics.zeroDays = finalMetricsData.zero_days ?? null;
+    metrics.hourlyDistribution = finalMetricsData.hourly_distribution ?? null;
 
-    // Агрегация
-    const totals = {
-      totalFlights: 0,
-      totalDuration: 0,
-      peakLoad: 0,
-      zeroDays: 0,
-      growthPercentList: [] as number[],
-      flightDensityList: [] as number[],
-      hourlySums: Array(24).fill(0),
-      hasHourlyData: false,
-      hasPeakLoad: false,
-      hasFlightDensity: false,
-    };
+    growthPercentData.value = finalMetricsData.growth_data || [];
+    missingMonths.value = finalMetricsData.missing_months || [];
 
-    // Собираем growthPercent по месяцам для графика
-    const growthByMonth: { [key: string]: number[] } = {};
-    monthResponses.forEach(({ data, month }) => {
-      if (data.length > 0) {
-        const monthGrowth = data.reduce((sum: number, region: any) => sum + (region.growth_percent || 0), 0) / data.length;
-        growthByMonth[month] = [parseFloat(monthGrowth.toFixed(1))];
-      }
-    });
-
-    allRegionsData.forEach((region: any, index: number) => {
-      // console.log(`🔍 Обрабатываю регион ${index + 1}/${allRegionsData.length}:`, region.region || 'unknown', {
-      //   flight_count: region.flight_count,
-      //   total_duration_min: region.total_duration_min,
-      //   zero_days: region.zero_days,
-      // });
-      totals.totalFlights += region.flight_count || 0;
-      totals.totalDuration += region.total_duration_min || 0;
-      totals.peakLoad = Math.max(totals.peakLoad, region.peak_load_hourly || 0);
-      totals.zeroDays += region.zero_days || 0;
-      totals.growthPercentList.push(region.growth_percent || 0);
-      totals.flightDensityList.push(region.flight_density || 0);
-
-      // Отмечаем наличие данных
-      if (region.peak_load_hourly || region.peak_load_hourly === 0) {
-        totals.hasPeakLoad = true;
-      }
-      if (region.flight_density || region.flight_density === 0) {
-        totals.hasFlightDensity = true;
-      }
-      // Суммируем hourly_distribution
-      const hourly = region.hourly_distribution || [];
-      if (hourly.length > 0) {
-        totals.hasHourlyData = true;
-      }
-      hourly.forEach((h: any) => {
-        const hour = Math.floor(h.hour);
-        if (hour >= 0 && hour < 24) {
-          totals.hourlySums[hour] += h.count || 0;
-        }
-      });
-    });
-
-    // Добавляем нулевые дни для пропущенных месяцев (предполагаем, что отсутствие данных = нулевые полеты за весь месяц)
-    missingMonths.value.forEach(missing => {
-      const [year, monthStr] = missing.split('-').map(Number);
-      totals.zeroDays += daysInMonth(year, monthStr);
-    });
-
-    // Ограничиваем zeroDays числом дней в периоде
-    const startDate = new Date(from);
-    const endDate = new Date(to);
-    const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    totals.zeroDays = Math.min(totals.zeroDays, totalDays);
-
-    // Формируем данные для графика роста
-    growthPercentData.value = months.map(({ year, month }) => ({
-      month: `${year}-${month}`,
-      value: growthByMonth[`${year}-${month}`]?.[0] || 0,
-    }));
-
-    // Проверка на отсутствие данных
-    if (!totals.hasPeakLoad) {
-      console.warn('⚠️ peak_load_hourly отсутствует во всех данных');
-    }
-    if (!totals.hasFlightDensity) {
-      console.warn('⚠️ flight_density отсутствует во всех данных');
-    }
-    if (!totals.hasHourlyData) {
-      console.warn('⚠️ hourly_distribution отсутствует или пусто во всех данных');
-    }
-
-    // Вычисления
-    metrics.totalFlights = totals.totalFlights;
-    metrics.avgDuration = totals.totalFlights > 0 ? parseFloat((totals.totalDuration / totals.totalFlights).toFixed(1)) : 0;
-    metrics.peakLoad = totals.peakLoad || 0;
-    metrics.zeroDays = totals.zeroDays;
-    metrics.growthPercent = totals.growthPercentList.length > 0
-      ? parseFloat((totals.growthPercentList.reduce((a, b) => a + b, 0) / totals.growthPercentList.length).toFixed(1))
-      : 0;
-    metrics.flightDensity = totals.flightDensityList.length > 0
-      ? parseFloat((totals.flightDensityList.reduce((a, b) => a + b, 0) / totals.flightDensityList.length).toFixed(4))
-      : 0;
-
-    // Среднемесячная hourly динамика
-    const hourlyDistributionTemp = totals.hourlySums.map((sumCount, hour) => ({
-      hour,
-      count: numDataMonths > 0 ? Math.round(sumCount / numDataMonths) : 0,
-    }));
-    metrics.hourlyDistribution = totals.hourlySums.every(c => c === 0) ? null : hourlyDistributionTemp;
-
-    console.log('🎯 Финальные метрики:', {
+    // --- 7. ФИНАЛЬНЫЙ ЛОГ ---
+    console.log('🎯 Финальные метрики (обработаны):', {
       totalFlights: metrics.totalFlights,
       avgDuration: metrics.avgDuration,
-      peakLoad: metrics.peakLoad,
-      flightDensity: metrics.flightDensity,
-      zeroDays: metrics.zeroDays,
       growthPercent: metrics.growthPercent,
-      hourlyDistribution: metrics.hourlyDistribution,
-      growthPercentData: growthPercentData.value,
+      // ... (можно добавить другие финальные метрики)
     });
+    console.groupEnd(); // Завершение группы лога
+
   } catch (error) {
-    console.error('❌ Критическая ошибка в fetchDataForSidebar:', error);
+    // --- 8. ОБРАБОТКА ОШИБОК И СБРОС ---
+    const axiosError = error as any;
+
+    // Сброс метрик при ошибке
     metrics.totalFlights = null;
     metrics.avgDuration = null;
     metrics.peakLoad = null;
@@ -516,6 +435,24 @@ const fetchDataForSidebar = async () => {
     metrics.growthPercent = null;
     metrics.hourlyDistribution = null;
     growthPercentData.value = [];
+    missingMonths.value = [];
+
+    if (axiosError.response) {
+      // Ошибка HTTP-ответа (статус 4xx или 5xx)
+      const status = axiosError.response.status;
+      console.error(`❌ ОШИБКА HTTP: Запрос к ${apiPath} завершился статусом ${status}.`);
+      console.error('Детали ответа:', axiosError.response.data);
+      console.error('Заголовки:', axiosError.response.headers);
+    } else if (axiosError.request) {
+      // Ошибка запроса (запрос отправлен, но нет ответа - таймаут, нет сети)
+      console.error(`❌ ОШИБКА СЕТИ: Запрос к ${apiPath} не получил ответа.`);
+      console.error('Детали запроса:', axiosError.request);
+    } else {
+      // Другие ошибки (ошибка настройки запроса)
+      console.error('❌ КРИТИЧЕСКАЯ ОШИБКА: Ошибка настройки или выполнения запроса:', axiosError.message);
+    }
+    console.groupEnd(); // Завершение группы лога
+
   } finally {
     isLoadingMetrics.value = false;
   }

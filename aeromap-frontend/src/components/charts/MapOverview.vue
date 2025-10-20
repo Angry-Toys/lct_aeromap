@@ -236,20 +236,24 @@ const initMap = async () => {
 
 const fetchFlightData = async () => {
   isLoading.value = true;
+  errorMessage.value = '';
   try {
     let flightData = [];
     let params = {
       from: props.filters.from || '2025-01-01',
       to: props.filters.to || '2025-12-31',
       metric: props.filters.metric || 'count',
+      // НОВЫЙ ПАРАМЕТР: customer
+      customer: props.filters.customer || undefined,
     };
 
     if (currentView.value === 'region' && selectedRegion.value) {
       params = { ...params, region: selectedRegion.value };
-      console.warn(`Заглушка для районов в ${selectedRegion.value}`);
+      // ⚠️ ЗАГЛУШКА: Данные по районам не меняются, но customer теперь передается
+      console.warn(`Заглушка для районов в ${selectedRegion.value}. Фильтр Customer: ${params.customer || 'Все'}.`);
       const geoDataFromCache = cachedGeo.value[selectedRegion.value] || { features: [] };
       const districtNames = geoDataFromCache.features.map((f: any) => f.properties.district || 'Unknown');
-      flightData = districtNames.map(name => ({ name, value: Math.floor(Math.random() * 1000) }));
+      //flightData = districtNames.map(name => ({ name, value: Math.floor(Math.random() * 1000) }));
     } else {
 
       const response =  await axios.get('/api/regions/flights', { params })

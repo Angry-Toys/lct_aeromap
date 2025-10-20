@@ -12,17 +12,17 @@
 
       <button class="btn action-btn purple-btn" @click="$emit('generate-png')">
         <i class="fas fa-chart-bar icon mr-2"></i>
-        Generate PNG
+        Экспорт PNG
       </button>
 
       <button class="btn action-btn green-btn" @click="$emit('export-json')">
         <i class="fas fa-file-export icon mr-2"></i>
-        Export JSON
+        Экспорт JSON
       </button>
 
       <button class="btn action-btn gray-btn" @click="$emit('upload-clicked')">
         <i class="fas fa-cloud-upload-alt icon mr-2"></i>
-        Upload Data
+        Загрузить данные
       </button>
 
       <button class="logout-btn" @click="logout">
@@ -126,6 +126,18 @@ const logout = () => {
   cursor: pointer;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2); /* shadow-lg */
   color: #ffffff;
+    font-family: Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Fira Sans',
+    'Droid Sans',
+    'Helvetica Neue',
+    sans-serif !important;
 }
 
 .icon {

@@ -18,7 +18,15 @@
         </div>
         <div class="region-info">
           <p class="label">Выбранный регион</p>
-          <h2 class="region-name">{{ props.selectedPath || 'Russian Federation' }}</h2>
+          <h2 class="region-name">{{ props.selectedPath || 'Российская Федерация' }}</h2>
+        </div>
+      </div>
+      <div class="customer-info">
+        <p class="label">Заказчик</p>
+        <div class="customer-name-wrapper">
+          <p class="customer-name">
+            {{ props.filters.customer || 'Все заказчики' }}
+          </p>
         </div>
       </div>
       <div class="date-group">
@@ -48,6 +56,7 @@ interface Filters {
   from?: string | null;
   to?: string | null;
   metric?: 'count' | 'avg_duration';
+  customer?: string | null; // <-- НОВОЕ ПОЛЕ
 }
 
 const props = defineProps<{
@@ -106,6 +115,54 @@ const formattedMissingRange = computed(() => {
   align-items: center;
   box-sizing: border-box;
   min-height: 110px;
+}
+
+.customer-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1;
+}
+
+.customer-name-wrapper {
+  /* Стили скопированы из .logo-container для эффекта Glassmorphism */
+
+  /* Фон, рамка и размытие */
+  background: linear-gradient(to right, rgba(60, 60, 60, 0.2), rgba(30, 30, 30, 0.2));
+  border-radius: 16px; /* Скругление */
+  padding: 12px 24px; /* Увеличенные паддинги */
+  border: 1px solid rgba(120, 120, 120, 0.2); /* Тонкая серая рамка */
+
+  /* Эффект размытия фона (backdrop-filter) */
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+
+  margin-top: 4px;
+  transition: all 0.3s ease;
+
+  /* Дополнительные свойства для центрирования содержимого (если нужно) */
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.customer-name {
+  /* Стиль текста: жирный, белый */
+  font-size: 1.5rem;
+  line-height: 1.75rem;
+  font-weight: 800; /* Очень жирный, как в логотипе */
+  margin: 0;
+  white-space: nowrap;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* ⚠️ ВОЗВРАТ К БЕЛОМУ ЦВЕТУ: УДАЛЕНЫ ВСЕ СВОЙСТВА ГРАДИЕНТА */
+  color: #ffffff;
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: unset;
 }
 
 .region-group {
