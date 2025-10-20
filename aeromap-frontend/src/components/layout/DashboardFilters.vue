@@ -3,7 +3,6 @@
     Панель фильтров: z-index: 100
   -->
   <div class="filters-panel">
-
     <!-- 1. ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ -->
     <div class="mode-switcher" ref="switcherRef">
       <!-- Фон для активного состояния. -->
@@ -11,14 +10,13 @@
         class="mode-indicator"
         :style="indicatorStyle"
       ></div>
-
       <button
         class="mode-btn"
         ref="dateRangeBtnRef"
         :class="{ 'mode-active': filterMode === 'dateRange' }"
         @click="setFilterMode('dateRange')"
       >
-        Date Range
+        Диапазон дат
       </button>
       <button
         class="mode-btn"
@@ -26,148 +24,161 @@
         :class="{ 'mode-active': filterMode === 'period' }"
         @click="setFilterMode('period')"
       >
-        Period
+        Период
       </button>
     </div>
-
     <!-- 2. ГРУППА ФИЛЬТРОВ ПО РЕЖИМУ -->
-    <div class="filter-controls-group">
-      <!-- РЕЖИМ: ДИАПАЗОН ДАТ (Date Range) -->
-      <div v-if="filterMode === 'dateRange'" class="date-range-inputs">
-
-        <!-- From Date -->
-        <div class="input-group">
-          <label for="from-date" class="input-label">From Date</label>
-          <div class="input-wrapper">
-            <input
-              id="from-date"
-              type="date"
-              v-model="filters.fromDate"
-              class="date-input"
-            />
-            <div class="input-icon">
-               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" /></svg>
-            </div>
-          </div>
-        </div>
-
-        <!-- To Date -->
-        <div class="input-group">
-          <label for="to-date" class="input-label">To Date</label>
-          <div class="input-wrapper">
-            <input
-              id="to-date"
-              type="date"
-              v-model="filters.toDate"
-              class="date-input"
-            />
-            <div class="input-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" /></svg>
-            </div>
+    <!-- РЕЖИМ: ДИАПАЗОН ДАТ (Date Range) -->
+    <div v-if="filterMode === 'dateRange'" class="date-range-inputs">
+      <!-- From Date -->
+      <div class="input-group">
+        <label for="from-date" class="input-label">Начиная с даты</label>
+        <div class="input-wrapper">
+          <input
+            id="from-date"
+            type="date"
+            v-model="filters.fromDate"
+            class="date-input"
+          />
+          <div class="input-icon">
+             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" /></svg>
           </div>
         </div>
       </div>
-
-      <!-- РЕЖИМ: ПЕРИОД (Period: Year/Month) -->
-      <div v-else class="period-selects">
-
-        <!-- Выбор Года -->
-        <div class="input-group">
-          <label class="input-label">Год</label>
-          <div class="dropdown-wrapper year-dropdown" @click="toggleDropdown('year')" :data-is-open="dropdowns.year">
-            <button class="dropdown-button">
-              <span class="font-medium">{{ filters.year }}</span>
-              <svg class="dropdown-arrow" :class="{ 'rotate-180': dropdowns.year }" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
-            </button>
-            <div v-if="dropdowns.year" class="dropdown-menu">
-              <button
-                v-for="year in years"
-                :key="year"
-                class="dropdown-item"
-                :class="{ 'item-active': filters.year === year }"
-                @click.stop="selectPeriod('year', year)"
-              >
-                {{ year }}
-                <svg v-if="filters.year === year" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Выбор Месяца -->
-        <div class="input-group">
-          <label class="input-label">Месяц</label>
-          <div class="dropdown-wrapper month-dropdown" @click="toggleDropdown('month')" :data-is-open="dropdowns.month">
-            <button class="dropdown-button">
-              <span class="font-medium">{{ filters.month ? getMonthName(filters.month) : 'Все' }}</span>
-               <svg class="dropdown-arrow" :class="{ 'rotate-180': dropdowns.month }" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
-            </button>
-            <div v-if="dropdowns.month" class="dropdown-menu">
-              <button
-                class="dropdown-item"
-                :class="{ 'item-active': filters.month === null }"
-                @click.stop="selectPeriod('month', null)"
-              >
-                Все
-                <svg v-if="filters.month === null" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-              </button>
-              <button
-                v-for="month in months"
-                :key="month.value"
-                class="dropdown-item"
-                :class="{ 'item-active': filters.month === month.value }"
-                @click.stop="selectPeriod('month', month.value)"
-              >
-                {{ month.name }}
-                <svg v-if="filters.month === month.value" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-              </button>
-            </div>
+      <!-- To Date -->
+      <div class="input-group">
+        <label for="to-date" class="input-label">Заканчивая датой</label>
+        <div class="input-wrapper">
+          <input
+            id="to-date"
+            type="date"
+            v-model="filters.toDate"
+            class="date-input"
+          />
+          <div class="input-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" /></svg>
           </div>
         </div>
       </div>
     </div>
-
+    <!-- РЕЖИМ: ПЕРИОД (Period: Year/Month) -->
+    <div v-else class="period-selects">
+      <!-- Выбор Года -->
+      <div class="input-group">
+        <label class="input-label">Год</label>
+        <div class="dropdown-wrapper year-dropdown" @click="toggleDropdown('year')" :data-is-open="dropdowns.year">
+          <button class="dropdown-button">
+            <span class="font-medium">{{ filters.year }}</span>
+            <svg class="dropdown-arrow" :class="{ 'rotate-180': dropdowns.year }" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+          </button>
+          <div v-if="dropdowns.year" class="dropdown-menu">
+            <button
+              v-for="year in years"
+              :key="year"
+              class="dropdown-item"
+              :class="{ 'item-active': filters.year === year }"
+              @click.stop="selectPeriod('year', year)"
+            >
+              {{ year }}
+              <svg v-if="filters.year === year" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- Выбор Месяца -->
+      <div class="input-group">
+        <label class="input-label">Месяц</label>
+        <div class="dropdown-wrapper month-dropdown" @click="toggleDropdown('month')" :data-is-open="dropdowns.month">
+          <button class="dropdown-button">
+            <span class="font-medium">{{ filters.month ? getMonthName(filters.month) : 'Все' }}</span>
+             <svg class="dropdown-arrow" :class="{ 'rotate-180': dropdowns.month }" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+          </button>
+          <div v-if="dropdowns.month" class="dropdown-menu">
+            <button
+              class="dropdown-item"
+              :class="{ 'item-active': filters.month === null }"
+              @click.stop="selectPeriod('month', null)"
+            >
+              Все
+              <svg v-if="filters.month === null" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+            </button>
+            <button
+              v-for="month in months"
+              :key="month.value"
+              class="dropdown-item"
+              :class="{ 'item-active': filters.month === month.value }"
+              @click.stop="selectPeriod('month', month.value)"
+            >
+              {{ month.name }}
+              <svg v-if="filters.month === month.value" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  <div class="input-group">
+        <label class="input-label">Заказчик</label>
+        <div class="dropdown-wrapper customer-dropdown" @click="toggleDropdown('customer')" :data-is-open="dropdowns.customer">
+          <button class="dropdown-button">
+            <span class="font-medium">{{ customers.find(c => c.id === filters.customer)?.name || 'Все' }}</span>
+            <svg class="dropdown-arrow" :class="{ 'rotate-180': dropdowns.customer }" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+          </button>
+          <div v-if="dropdowns.customer" class="dropdown-menu">
+            <button
+              class="dropdown-item"
+              :class="{ 'item-active': filters.customer === null }"
+              @click.stop="selectPeriod('customer', null)"
+            >
+              Все
+              <svg v-if="filters.customer === null" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+            </button>
+            <button
+              v-for="cust in customers"
+              :key="cust.id"
+              class="dropdown-item"
+              :class="{ 'item-active': filters.customer === cust.id }"
+              @click.stop="selectPeriod('customer', cust.id)"
+            >
+              {{ cust.name }}
+              <svg v-if="filters.customer === cust.id" class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+            </button>
+          </div>
+        </div>
+  </div>
     <!-- Кнопка Применить -->
     <button class="apply-btn" @click="applyFilters">Применить</button>
   </div>
 </template>
-
 <script setup lang="ts">
 import { reactive, ref, onMounted, watch, nextTick } from 'vue';
-
+import api from '@/utils/api';
 const emit = defineEmits(['filters-updated']);
-
 // --- РЕФЫ ДЛЯ ДИНАМИЧЕСКОГО ПЕРЕКЛЮЧАТЕЛЯ ---
 const switcherRef = ref<HTMLElement | null>(null);
 const dateRangeBtnRef = ref<HTMLElement | null>(null);
 const periodBtnRef = ref<HTMLElement | null>(null);
 const indicatorStyle = ref({});
-
-
 // --- СОСТОЯНИЕ ФИЛЬТРОВ И РЕЖИМОВ ---
 const filterMode = ref<'dateRange' | 'period'>('dateRange'); // Default mode
 const today = new Date().toISOString().split('T')[0];
-
 const filters = reactive({
   // Режим Period
   year: '2025',
   month: null as string | null, // null = Все месяцы
   // Режим Date Range
+  customer: null as string | null,
   fromDate: '2025-01-01',
   toDate: today,
 });
-
 const dropdowns = reactive({
   year: false,
   month: false,
+  customer: false,
 });
-
 const currentYear = new Date().getFullYear();
 const years = Array.from({ length: 5 }, (_, i) => String(currentYear + 2 - i)).filter(y => y >= '2023');
 if (!years.includes('2025')) years.push('2025');
 years.sort((a, b) => parseInt(b) - parseInt(a));
-
-
 const months = [
   { value: '01', name: 'Январь' }, { value: '02', name: 'Февраль' },
   { value: '03', name: 'Март' }, { value: '04', name: 'Апрель' },
@@ -176,24 +187,48 @@ const months = [
   { value: '09', name: 'Сентябрь' }, { value: '10', name: 'Октябрь' },
   { value: '11', name: 'Ноябрь' }, { value: '12', name: 'Декабрь' },
 ];
-
 const getMonthName = (monthValue: string | null) => {
     return months.find(m => m.value === monthValue)?.name || 'Все';
 };
-
+// === ДОБАВЛЕНО: ДАННЫЕ ДЛЯ ЗАКАЗЧИКОВ ===
+interface Customer {
+  id: string;
+  name: string;
+}
+const customers = ref<Customer[]>([]);
+const fetchCustomers = async () => {
+  console.log('Fetching customers from API: /api/metrics/customers');
+  try {
+    // Используем placeholder API для получения списка заказчиков
+    const response = await api.get('/api/metrics/customers');
+    // Предполагаем, что ответ - это массив объектов,
+    // где каждый элемент имеет поля id и name.
+    customers.value = response.data.map((item: any) => ({
+      id: item.id || item.name,
+      name: item.name,
+    }));
+    console.log(`✅ Customers loaded: ${customers.value.length} items`);
+  } catch (error) {
+    console.error('Ошибка при загрузке списка заказчиков:', error);
+    // На случай ошибки, вернем хотя бы минимальный список для тестирования
+    customers.value = [
+      { id: 'gazprom', name: 'Газпром' },
+      { id: 'rosneft', name: 'Роснефть' },
+      { id: 'rosatom', name: 'Росатом' },
+    ];
+  }
+};
+// === КОНЕЦ БЛОКА ===
 // --- ЛОГИКА ДИНАМИЧЕСКОГО ПЕРЕКЛЮЧАТЕЛЯ ---
 const updateIndicatorStyle = () => {
   nextTick(() => {
     if (!switcherRef.value) return;
-
     const activeBtn = filterMode.value === 'dateRange'
       ? dateRangeBtnRef.value
       : periodBtnRef.value;
-
     if (activeBtn) {
       const switcherRect = switcherRef.value.getBoundingClientRect();
       const btnRect = activeBtn.getBoundingClientRect();
-
       indicatorStyle.value = {
         width: `${btnRect.width}px`,
         transform: `translateX(${btnRect.left - switcherRect.left}px)`,
@@ -201,42 +236,38 @@ const updateIndicatorStyle = () => {
     }
   });
 };
-
 const setFilterMode = (mode: 'dateRange' | 'period') => {
   filterMode.value = mode;
   dropdowns.year = false;
   dropdowns.month = false;
-
   updateIndicatorStyle();
 };
-
-
-
-const toggleDropdown = (key: 'year' | 'month') => {
-    if (key === 'year') {
-        dropdowns.month = false;
-    } else {
-        dropdowns.year = false;
-    }
-    dropdowns[key] = !dropdowns[key];
+const toggleDropdown = (key: 'year' | 'month' | 'customer') => {
+  if (key === 'year') {
+    dropdowns.month = false;
+    dropdowns.customer = false;
+  } else if (key === 'month') {
+    dropdowns.year = false;
+    dropdowns.customer = false;
+  } else { // key === 'customer'
+    dropdowns.year = false;
+    dropdowns.month = false;
+  }
+  dropdowns[key] = !dropdowns[key];
 };
-
-const selectPeriod = (key: 'year' | 'month', value: string | null) => {
+const selectPeriod = (key: 'year' | 'month' | 'customer', value: string | null) => {
     filters[key] = value as any;
     toggleDropdown(key);
 };
-
 const applyFilters = () => {
   let fromDate: string;
   let toDate: string;
-
   if (filterMode.value === 'dateRange') {
     fromDate = filters.fromDate;
     toDate = filters.toDate;
   } else {
     const year = filters.year;
     const month = filters.month;
-
     if (month) {
       fromDate = `${year}-${month}-01`;
       const lastDayOfMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
@@ -246,30 +277,25 @@ const applyFilters = () => {
       toDate = `${year}-12-31`;
     }
   }
-
-  emit('filters-updated', {
+emit('filters-updated', {
     from: fromDate,
     to: toDate,
-    // Добавляем текущую метрику, чтобы не сбрасывать ее при смене дат
-    metric: 'count' // или можно прокинуть из родителя
+    customer: filters.customer, // <-- ДОБАВЛЕНО
+    metric: 'count'
   });
 };
-
 // Наблюдатели
 watch(filterMode, () => {
   updateIndicatorStyle();
   applyFilters();
 });
-
 watch(filters, applyFilters, { deep: true });
-
 onMounted(() => {
+    fetchCustomers();
     applyFilters();
     updateIndicatorStyle();
 });
-
 </script>
-
 <style scoped>
 /* ==================== 1. ОСНОВНОЙ КОНТЕЙНЕР ==================== */
 .filters-panel {
@@ -286,7 +312,6 @@ onMounted(() => {
   position: relative;
   z-index: 100;
 }
-
 /* ==================== 2. ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ ==================== */
 .mode-switcher {
   display: inline-flex; /* Используем inline-flex для автоширины */
@@ -297,7 +322,6 @@ onMounted(() => {
   border: 1px solid rgba(50, 50, 50, 0.5);
   position: relative;
 }
-
 .mode-indicator {
     position: absolute;
     top: 4px;
@@ -308,7 +332,6 @@ onMounted(() => {
     transition: transform 0.3s ease, width 0.3s ease;
     z-index: 1;
 }
-
 .mode-btn {
   padding: 8px 16px;
   border-radius: 8px; /* Уменьшили радиус */
@@ -323,16 +346,25 @@ onMounted(() => {
   transition: color 0.3s ease;
   position: relative;
   z-index: 2;
+  font-family: Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Fira Sans',
+    'Droid Sans',
+    'Helvetica Neue',
+    sans-serif !important;
 }
-
 .mode-btn:hover {
   color: #ffffff;
 }
-
 .mode-btn.mode-active {
   color: #fff;
 }
-
 /* ==================== 3. ГРУППА ФИЛЬТРОВ ==================== */
 .filter-controls-group {
   display: flex;
@@ -340,21 +372,18 @@ onMounted(() => {
   flex-wrap: wrap; /* Разрешаем перенос */
   gap: 16px;
 }
-
 .date-range-inputs, .period-selects {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
 }
-
 /* ==================== 4. СТИЛИ ДЛЯ INPUT/SELECT ==================== */
 .input-group {
   display: flex;
   flex-direction: column;
   width: auto; /* Автоматическая ширина */
 }
-
 .input-label {
   color: #6b7280; /* text-gray-500 */
   font-size: 0.875rem;
@@ -362,11 +391,9 @@ onMounted(() => {
   margin-bottom: 8px;
   white-space: nowrap;
 }
-
 .input-wrapper {
   position: relative;
 }
-
 .date-input, .dropdown-button {
   /* Базовые стили */
   background-color: rgba(0, 0, 0, 0.5);
@@ -379,13 +406,11 @@ onMounted(() => {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   outline: none;
-
   /* Для выравнивания иконок и текста */
   display: inline-flex; /* Ключевое свойство для автоширины */
   align-items: center;
   white-space: nowrap;
 }
-
 .date-input {
   padding-right: 40px; /* Оставляем место для иконки */
 }
@@ -393,26 +418,25 @@ onMounted(() => {
    justify-content: space-between;
    gap: 12px; /* Расстояние между текстом и стрелкой */
 }
-
 /* --- Новое свечение для Date Input --- */
 .input-group:hover .date-input,
 .date-input:focus {
     border-color: rgba(255, 255, 255, 0.7);
     box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
 }
-
 /* --- Цветные эффекты свечения для дропдаунов --- */
 .year-dropdown:hover .dropdown-button, .dropdown-wrapper[data-is-open="true"].year-dropdown .dropdown-button {
     border-color: #6d28d9; /* Purple */
     box-shadow: 0 4px 15px rgba(109, 40, 217, 0.3);
 }
-
 .month-dropdown:hover .dropdown-button, .dropdown-wrapper[data-is-open="true"].month-dropdown .dropdown-button {
     border-color: #047857; /* Green */
     box-shadow: 0 4px 15px rgba(4, 120, 87, 0.3);
 }
-
-
+.customer-dropdown:hover .dropdown-button, .dropdown-wrapper[data-is-open="true"].customer-dropdown .dropdown-button {
+    border-color: #2563eb; /* Blue */
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+}
 .input-icon {
   position: absolute;
   top: 50%;
@@ -423,14 +447,12 @@ onMounted(() => {
   width: 1.1em;
   height: 1.1em;
 }
-
 /* ==================== 5. СТИЛИ ДЛЯ DROPDOWN ==================== */
 .dropdown-wrapper {
     position: relative;
     cursor: pointer;
     width: auto;
 }
-
 .dropdown-arrow {
     width: 1.25em;
     height: 1.25em;
@@ -440,7 +462,6 @@ onMounted(() => {
 .dropdown-arrow.rotate-180 {
     transform: rotate(180deg);
 }
-
 .dropdown-menu {
   position: absolute;
   top: calc(100% + 12px); /* Увеличили отступ */
@@ -469,8 +490,6 @@ onMounted(() => {
     border-bottom: 8px solid #323232; /* Цвет совпадает с border-color меню */
     z-index: 102;
 }
-
-
 .dropdown-item {
   display: flex;
   justify-content: space-between;
@@ -501,7 +520,6 @@ onMounted(() => {
     width: 1.1em;
     height: 1.1em;
 }
-
 /* ==================== 6. КНОПКА "Применить" ==================== */
 .apply-btn {
   margin-left: auto; /* Прижимаем вправо, если есть место */
@@ -521,7 +539,6 @@ onMounted(() => {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(255, 193, 7, 0.4);
 }
-
 /* ==================== 7. АДАПТИВНОСТЬ ==================== */
 @media (max-width: 768px) {
     .filters-panel {
@@ -534,4 +551,3 @@ onMounted(() => {
     }
 }
 </style>
-
