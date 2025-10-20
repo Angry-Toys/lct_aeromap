@@ -1,4 +1,4 @@
-import six 
+import six
 import re
 from datetime import datetime, timedelta
 import pandas as pd
@@ -9,11 +9,11 @@ from fiona import Env
 from sqlalchemy import create_engine, text
 from geoalchemy2 import Geometry
 from flask import Flask, jsonify, send_file, make_response, request, redirect, g
-from flask import session   
+from flask import session
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
 from flask import Blueprint
-from flask_oidc import OpenIDConnect 
+from flask_oidc import OpenIDConnect
 import matplotlib.pyplot as plt
 import io
 import json
@@ -27,61 +27,49 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from sklearn.cluster import DBSCAN
 import numpy as np
 from authlib.integrations.flask_client import OAuthError
-
 app = Flask(__name__)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = False 
+app.config['SESSION_COOKIE_SECURE'] = False
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-CORS(app, origins=['*']) 
+CORS(app, origins=['*'])
 OIDC_ISSUER_URL = os.getenv('OIDC_ISSUER', 'http://keycloak:8080/realms/aviation-realm')
 HOST_MAPPING = 'keycloak:8080'
 PUBLIC_HOST = 'localhost:8080'
 app.config.update({
-    'OIDC_CLIENT_SECRETS': {  
+    'OIDC_CLIENT_SECRETS': {
         'web': {
             'client_id': os.getenv('OIDC_CLIENT_ID', 'aviation-api'),
             'client_secret': os.getenv('OIDC_CLIENT_SECRET', '8HUnPbB26kdCImTFXLfN9scQLQmYLW4d'),
-            'issuer': OIDC_ISSUER_URL, 
+            'issuer': OIDC_ISSUER_URL,
             'OIDC_VALID_ISSUERS': ['http://keycloak:8080/realms/aviation-realm', 'http://localhost:8080/realms/aviation-realm'],
-
             'leeway': 60
         }
     },
-    'OVERWRITE_REDIRECT_URI': 'http://localhost:5000/oidc_callback',  
+    'OVERWRITE_REDIRECT_URI': 'http://localhost:5000/oidc_callback',
     'SECRET_KEY': os.getenv('SECRET_KEY', 'your-secret-key'),
     'SESSION_COOKIE_SAMESITE': 'Lax',
     'SESSION_COOKIE_SECURE': False,
 })
-
 oidc = OpenIDConnect(app)
-
 bp = Blueprint('api', __name__, url_prefix='/api')
-
-
 handler = RotatingFileHandler('app.log', maxBytes=10000, backupCount=1)
 handler.setLevel(logging.INFO)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
-
-
 DB_URL = os.getenv('DB_URL', 'postgresql://aviation_user:aviation_pass@localhost:5432/aviation_db')
 engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=3600)
 SHAPEFILE_PATH = 'shapefiles/RF.shp'
-
-
 SWAGGER_URL = '/swagger'
 API_URL = '/static/swagger.json'
 swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL, config={'app_name': "БПЛА Анализ"})
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
-
-
 def parse_coords(coord_str):
     if not coord_str:
         return None, None
     coord_str = str(coord_str).upper().replace(' ', '').replace('С', 'N').replace('В', 'E').replace('C', 'N')
     try:
-       
+      
         match = re.match(r'(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])', coord_str)
         if match:
             lat_deg = int(match.group(1))
@@ -91,7 +79,7 @@ def parse_coords(coord_str):
             lon_min = int(match.group(5))
             lon_dir = match.group(6)
             if not (0 <= lat_deg <= 90 and 0 <= lat_min < 60 and 0 <= lon_deg <= 180 and 0 <= lon_min < 60):
-                return None, None  
+                return None, None
             lat = lat_deg + lat_min / 60.0
             if lat_dir == 'S':
                 lat = -lat
@@ -99,7 +87,6 @@ def parse_coords(coord_str):
             if lon_dir == 'W':
                 lon = -lon
             return lat, lon
-
         match_ss = re.match(r'(\d{2})(\d{2})(\d{2})([NS])(\d{3})(\d{2})(\d{2})([EW])', coord_str)
         if match_ss:
             lat_deg = int(match_ss.group(1))
@@ -119,15 +106,13 @@ def parse_coords(coord_str):
             if lon_dir == 'W':
                 lon = -lon
             return lat, lon
-
         if 'ZONA' in coord_str:
-            coord_matches = re.findall(r'(\d{4}[NS]\d{5}[EW])', coord_str) 
+            coord_matches = re.findall(r'(\d{4}[NS]\d{5}[EW])', coord_str)
             if coord_matches:
                 return parse_coords(coord_matches[0])
     except ValueError:
         pass
     return None, None
-
 def parse_time(time_str):
     time_str = str(time_str).strip()
     if len(time_str) >= 4 and time_str[:4].isdigit():
@@ -138,7 +123,6 @@ def parse_time(time_str):
         except ValueError:
             pass
     return None
-
 def parse_date(date_str):
     date_str = str(date_str).strip()
     if len(date_str) == 6 and date_str.isdigit():
@@ -150,7 +134,6 @@ def parse_date(date_str):
         except ValueError:
             pass
     return None
-
 def calculate_duration(dep_date, dep_time, arr_date, arr_time):
     if dep_date and dep_time and arr_date and arr_time:
         dep_dt = datetime.combine(dep_date, dep_time)
@@ -159,13 +142,12 @@ def calculate_duration(dep_date, dep_time, arr_date, arr_time):
             arr_dt += timedelta(days=1)
         return (arr_dt - dep_dt).total_seconds() / 60
     return None
-
 def parse_flight_row(row_str):
     if not row_str.strip() or 'truncated' in row_str:
         return None
     try:
         row_str = re.sub(r'row\d+:\s*', '', row_str).strip().replace('\n', ' ')
-        app.logger.debug(f"Parsing row: {row_str[:100]}...") 
+        app.logger.debug(f"Parsing row: {row_str[:100]}...")
         center_match = re.match(r'(.*?)\s*\(', row_str)
         center = center_match.group(1).strip() if center_match else ''
         shr_full = row_str[center_match.end()-1:] if center_match else row_str
@@ -180,7 +162,7 @@ def parse_flight_row(row_str):
         flight_type = typ_match.group(1) if typ_match else None
         customer_match = re.search(r'OPR/(.*?)( TYP/| RMK/| STS/| REG/| DEST/| $)', shr_section, re.DOTALL)
         customer = customer_match.group(1).strip() if customer_match else None
-        operator = customer  
+        operator = customer
         dof_match = re.search(r'DOF/(\d{6})', shr_section)
         dof_date = parse_date(dof_match.group(1)) if dof_match else None
         dep_coord_str = re.search(r'DEP/([\dNS EWСВ\d]+)', shr_section).group(1) if re.search(r'DEP/([\dNS EWСВ\d]+)', shr_section) else ''
@@ -221,7 +203,6 @@ def parse_flight_row(row_str):
     except Exception as e:
         app.logger.error(f"Parse error in row: {row_str} - {str(e)}")
         return None
-
 def get_region(lat, lon, gdf):
     if pd.isna(lat) or pd.isna(lon):
         return None
@@ -230,7 +211,6 @@ def get_region(lat, lon, gdf):
         if row['geometry'].contains(point):
             return row['name_ru']
     return None
-
 @bp.route('/upload', methods=['POST'])
 #@oidc.accept_token()
 def upload_file():
@@ -257,7 +237,7 @@ def upload_file():
                     all_rows.append(row_str)
             if not all_rows:
                 return jsonify({"error": "No valid data in any sheet"}), 400
-            
+           
             app.logger.info(f"Collected {len(all_rows)} raw rows from Excel")
             with Pool(processes=4) as pool:
                 parsed_flights = pool.map(parse_flight_row, all_rows)
@@ -288,7 +268,6 @@ def upload_file():
     except Exception as e:
         app.logger.error(f"Error in upload: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @bp.route('/webhook', methods=['POST'])
 #@oidc.accept_token()
 def webhook():
@@ -324,7 +303,6 @@ def webhook():
     except Exception as e:
         app.logger.error(f"Error in webhook: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @bp.route('/report/export', methods=['GET'])
 #@oidc.accept_token()
 def export_report():
@@ -334,7 +312,6 @@ def export_report():
         with engine.connect() as conn:
             flights_df = pd.read_sql("SELECT * FROM flights;", conn)
             metrics_df = pd.read_sql("SELECT * FROM metrics;", conn)
-
         flights_df['dep_date'] = flights_df['dep_date'].astype(str)
         flights_df['arr_date'] = flights_df['arr_date'].astype(str)
         flights_df['dep_time'] = flights_df['dep_time'].apply(lambda x: x.strftime('%H:%M:%S') if pd.notnull(x) else None)
@@ -351,18 +328,18 @@ def export_report():
     except Exception as e:
         app.logger.error(f"Error in export: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @bp.route('/metrics', methods=['GET'])
 def get_metrics():
     try:
         year = request.args.get('year')
         month = request.args.get('month')
+        from_date = request.args.get('from_date')
+        to_date = request.args.get('to_date')
         region = request.args.get('region')
-        group_by = request.args.get('group_by', 'regions')  # Default: regions; alternative: customers
-
+        customer = request.args.get('customer')
+        group_by = request.args.get('group_by', 'regions') # Default: regions; alternative: customers
         if group_by not in ['regions', 'customers']:
             return jsonify({"error": "Invalid group_by (regions or customers)"}), 400
-
         # Base query с фильтрами
         base_query = """
             SELECT f.region, f.customer, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
@@ -372,14 +349,23 @@ def get_metrics():
         where_parts = []
         params = {}
         if year:
-            where_parts.append("f.dep_date::text LIKE :year")
-            params['year'] = f"{year}%"
+            where_parts.append("EXTRACT(YEAR FROM f.dep_date) = :year")
+            params['year'] = int(year)
         if month:
-            where_parts.append("f.dep_date::text LIKE :month")
-            params['month'] = f"%-{month}-%"
+            where_parts.append("EXTRACT(MONTH FROM f.dep_date) = :month")
+            params['month'] = int(month)
+        if from_date:
+            where_parts.append("f.dep_date >= :from_date")
+            params['from_date'] = from_date
+        if to_date:
+            where_parts.append("f.dep_date <= :to_date")
+            params['to_date'] = to_date
         if region:
             where_parts.append("f.region = :region")
             params['region'] = region
+        if customer:
+            where_parts.append("f.customer ILIKE :customer")
+            params['customer'] = f"%{customer}%"
         if group_by == 'customers':
             where_parts.append("f.customer IS NOT NULL")
         if where_parts:
@@ -389,17 +375,89 @@ def get_metrics():
             df = pd.read_sql(text(base_query), conn, params=params)
         if df.empty:
             return jsonify({"error": "No metrics available"}), 404
-
         if group_by == 'customers':
             df['customer'] = df['customer'].apply(lambda x: re.sub(r'\+\d{10,}', '', x).strip() if x else x)
-            metrics = df.groupby('customer').agg({
-                'flight_id': 'count',
-                'duration_min': ['mean', 'sum']
-            }).reset_index()
-            metrics.columns = ['customer', 'flight_count', 'avg_duration_min', 'total_duration_min']
-            metrics = metrics.sort_values('flight_count', ascending=False)
-            return jsonify(metrics.to_dict(orient='records')), 200
-
+            metrics_df = df.groupby('customer').agg(
+                flight_count=('flight_id', 'count'),
+                avg_duration_min=('duration_min', 'mean'),
+                total_duration_min=('duration_min', 'sum')
+            ).reset_index()
+            # Peak hourly for customers
+            df_time = df[df['dep_date'].notnull() & df['dep_time'].notnull()].copy()
+            if not df_time.empty:
+                df_time['dep_time_str'] = df_time['dep_time'].apply(lambda x: x.strftime('%H:%M:%S') if pd.notnull(x) else '00:00:00')
+                df_time['dep_datetime'] = pd.to_datetime(df_time['dep_date'].astype(str) + ' ' + df_time['dep_time_str'], errors='coerce')
+                df_time = df_time.dropna(subset=['dep_datetime'])
+                if not df_time.empty:
+                    df_time['hour'] = df_time['dep_datetime'].dt.floor('H')
+                    metrics_df['peak_load_hourly'] = df_time.groupby(['customer', 'hour'])['flight_id'].count().groupby('customer').max().values
+                else:
+                    metrics_df['peak_load_hourly'] = 0
+            else:
+                metrics_df['peak_load_hourly'] = 0
+            # Daily stats for customers
+            daily_counts = df.groupby(['customer', 'dep_date'])['flight_id'].count().reset_index(name='daily_count')
+            metrics_df = metrics_df.merge(daily_counts.groupby('customer')['daily_count'].agg(['mean', 'median']).reset_index(), on='customer')
+            metrics_df = metrics_df.rename(columns={'mean': 'avg_daily_flights', 'median': 'median_daily_flights'})
+            metrics_df = metrics_df.sort_values(by='flight_count', ascending=False)
+            # Growth for customers
+            if month:
+                prev_month = int(month) - 1 if int(month) > 1 else 12
+                prev_year = int(year) if prev_month != 12 else int(year) - 1
+                prev_params = {'prev_year': prev_year, 'prev_month': prev_month}
+                prev_base = """
+                    SELECT f.customer, f.flight_id, f.duration_min, f.dep_date, f.dep_time
+                    FROM flights f
+                    WHERE EXTRACT(YEAR FROM f.dep_date) = :prev_year AND EXTRACT(MONTH FROM f.dep_date) = :prev_month;
+                """
+                with engine.connect() as conn:
+                    prev_df = pd.read_sql(text(prev_base), conn, params=prev_params)
+                if not prev_df.empty:
+                    prev_counts = prev_df.groupby('customer')['flight_id'].count().reset_index(name='flight_count_prev')
+                    metrics_df = metrics_df.merge(prev_counts, on='customer', how='left')
+                    metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev'].fillna(0)) / metrics_df['flight_count_prev'].fillna(1)) * 100
+            # Hourly distribution per customer
+            hourly_query = """
+                SELECT f.customer, EXTRACT(HOUR FROM f.dep_time) as hour, COUNT(*) as count 
+                FROM flights f 
+                WHERE f.dep_time IS NOT NULL
+            """
+            if where_parts:
+                hourly_query += " AND " + " AND ".join(where_parts)
+            hourly_query += " GROUP BY f.customer, hour;"
+            with engine.connect() as conn:
+                hourly_df = pd.read_sql(text(hourly_query), conn, params=params)
+            if not hourly_df.empty:
+                hourly_groups = hourly_df.groupby('customer')
+                def get_dist(c):
+                    if c in hourly_groups.groups:
+                        group = hourly_groups.get_group(c)
+                        return group[['hour', 'count']].sort_values('hour').to_dict(orient='records')
+                    return []
+                metrics_df['hourly_distribution'] = metrics_df['customer'].apply(get_dist)
+            else:
+                metrics_df['hourly_distribution'] = [[]] * len(metrics_df)
+            # Zero days for customers - adapt query
+            zero_days_query = """
+                SELECT c.customer, COUNT(*) as zero_days
+                FROM (SELECT DISTINCT customer FROM flights) c
+                LEFT JOIN (
+                    SELECT generate_series(
+                        COALESCE(MIN(dep_date), CURRENT_DATE),
+                        COALESCE(MAX(dep_date), CURRENT_DATE),
+                        '1 day'::interval
+                    ) as day
+                    FROM flights
+                    WHERE dep_date IS NOT NULL
+                ) days ON TRUE
+                LEFT JOIN flights f ON days.day = f.dep_date AND f.customer = c.customer
+                WHERE f.flight_id IS NULL
+                GROUP BY c.customer;
+            """
+            with engine.connect() as conn:
+                zero_df = pd.read_sql(zero_days_query, conn)
+            metrics_df = metrics_df.merge(zero_df, on='customer', how='left').fillna({'zero_days': 0})
+            return jsonify(metrics_df.to_dict(orient='records')), 200
         # Original logic for regions
         metrics_df = df.groupby('region').agg(
             flight_count=('flight_id', 'count'),
@@ -408,12 +466,17 @@ def get_metrics():
             area_km2=('area_km2', 'max')
         ).reset_index()
         metrics_df['flight_density'] = metrics_df['flight_count'] / metrics_df['area_km2']
-        # Peak hourly: Фильтруем строки с dep_time IS NOT NULL
-        df_time = df[df['dep_time'].notnull()].copy()
+        # Peak hourly: Фильтруем строки с dep_date AND dep_time NOT NULL
+        df_time = df[df['dep_date'].notnull() & df['dep_time'].notnull()].copy()
         if not df_time.empty:
-            df_time['dep_datetime'] = pd.to_datetime(df_time['dep_date'].astype(str) + ' ' + df_time['dep_time'].astype(str))
-            df_time['hour'] = df_time['dep_datetime'].dt.floor('H')
-            metrics_df['peak_load_hourly'] = df_time.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
+            df_time['dep_time_str'] = df_time['dep_time'].apply(lambda x: x.strftime('%H:%M:%S') if pd.notnull(x) else '00:00:00')
+            df_time['dep_datetime'] = pd.to_datetime(df_time['dep_date'].astype(str) + ' ' + df_time['dep_time_str'], errors='coerce')
+            df_time = df_time.dropna(subset=['dep_datetime']) # Удаляем NaT
+            if not df_time.empty:
+                df_time['hour'] = df_time['dep_datetime'].dt.floor('H')
+                metrics_df['peak_load_hourly'] = df_time.groupby(['region', 'hour'])['flight_id'].count().groupby('region').max().values
+            else:
+                metrics_df['peak_load_hourly'] = 0
         else:
             metrics_df['peak_load_hourly'] = 0
         # Daily stats
@@ -424,13 +487,13 @@ def get_metrics():
         # Growth
         if month:
             prev_month = int(month) - 1 if int(month) > 1 else 12
-            prev_year = year if prev_month != 12 else str(int(year) - 1)
-            prev_params = {'prev_year': f"{prev_year}%", 'prev_month': f"%-{str(prev_month).zfill(2)}-%"}
+            prev_year = int(year) if prev_month != 12 else int(year) - 1
+            prev_params = {'prev_year': prev_year, 'prev_month': prev_month}
             prev_base = """
                 SELECT f.region, f.flight_id, f.duration_min, f.dep_date, f.dep_time, m.area_km2
                 FROM flights f
                 JOIN metrics m ON f.region = m.region
-                WHERE f.dep_date::text LIKE :prev_year AND f.dep_date::text LIKE :prev_month;
+                WHERE EXTRACT(YEAR FROM f.dep_date) = :prev_year AND EXTRACT(MONTH FROM f.dep_date) = :prev_month;
             """
             with engine.connect() as conn:
                 prev_df = pd.read_sql(text(prev_base), conn, params=prev_params)
@@ -438,10 +501,27 @@ def get_metrics():
                 prev_counts = prev_df.groupby('region')['flight_id'].count().reset_index(name='flight_count_prev')
                 metrics_df = metrics_df.merge(prev_counts, on='region', how='left')
                 metrics_df['growth_percent'] = ((metrics_df['flight_count'] - metrics_df['flight_count_prev'].fillna(0)) / metrics_df['flight_count_prev'].fillna(1)) * 100
-        hourly_query = "SELECT EXTRACT(HOUR FROM dep_time) as hour, COUNT(*) as count FROM flights WHERE dep_time IS NOT NULL GROUP BY hour;"
+        # Hourly distribution per region, with filters
+        hourly_query = """
+            SELECT f.region, EXTRACT(HOUR FROM f.dep_time) as hour, COUNT(*) as count 
+            FROM flights f 
+            WHERE f.dep_time IS NOT NULL
+        """
+        if where_parts:
+            hourly_query += " AND " + " AND ".join(where_parts)
+        hourly_query += " GROUP BY f.region, hour;"
         with engine.connect() as conn:
-            hourly_df = pd.read_sql(hourly_query, conn)
-        metrics_df['hourly_distribution'] = [hourly_df.to_dict(orient='records')] * len(metrics_df)
+            hourly_df = pd.read_sql(text(hourly_query), conn, params=params)
+        if not hourly_df.empty:
+            hourly_groups = hourly_df.groupby('region')
+            def get_dist(r):
+                if r in hourly_groups.groups:
+                    group = hourly_groups.get_group(r)
+                    return group[['hour', 'count']].sort_values('hour').to_dict(orient='records')
+                return []
+            metrics_df['hourly_distribution'] = metrics_df['region'].apply(get_dist)
+        else:
+            metrics_df['hourly_distribution'] = [[]] * len(metrics_df)
         zero_days_query = """
             SELECT m.region, COUNT(*) as zero_days
             FROM metrics m
@@ -467,7 +547,7 @@ def get_metrics():
     except Exception as e:
         app.logger.error(f"Error in metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
+   
 @bp.route('/metrics/operators', methods=['GET'])
 #@oidc.accept_token()
 def get_operators_metrics():
@@ -487,7 +567,6 @@ def get_operators_metrics():
     except Exception as e:
         app.logger.error(f"Error in operators metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @bp.route('/metrics/types', methods=['GET'])
 #@oidc.accept_token()
 def get_types_metrics():
@@ -507,7 +586,6 @@ def get_types_metrics():
     except Exception as e:
         app.logger.error(f"Error in types metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @bp.route('/metrics/total', methods=['GET'])
 #@oidc.accept_token()
 def get_total_metrics():
@@ -533,8 +611,7 @@ def get_total_metrics():
     except Exception as e:
         app.logger.error(f"Error in total metrics: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
-    
+   
 @bp.route('/metrics/customers', methods=['GET'])
 @oidc.require_login
 def get_customers_list():
@@ -551,7 +628,7 @@ def get_customers_list():
     except Exception as e:
         app.logger.error(f"Error in customers list: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
+   
 @bp.route('/flights/coords', methods=['GET'])
 #@oidc.accept_token()
 def get_flights_coords():
@@ -561,13 +638,12 @@ def get_flights_coords():
         year = request.args.get('year')
         month = request.args.get('month')
         region = request.args.get('region')
-        limit = int(request.args.get('limit', 5000)) 
-        cluster_eps = float(request.args.get('cluster_eps', 0.05)) 
-
+        limit = int(request.args.get('limit', 5000))
+        cluster_eps = float(request.args.get('cluster_eps', 0.05))
         sql = """
-            SELECT dep_lat AS lat, dep_lon AS lon, 
-                   COALESCE(duration_min, 1) AS intensity 
-            FROM flights 
+            SELECT dep_lat AS lat, dep_lon AS lon,
+                   COALESCE(duration_min, 1) AS intensity
+            FROM flights
             WHERE dep_lat IS NOT NULL AND dep_lon IS NOT NULL
         """
         params = {}
@@ -582,22 +658,18 @@ def get_flights_coords():
             params['region'] = region
         sql += " LIMIT :limit;"
         params['limit'] = limit
-
         with engine.connect() as conn:
             df = pd.read_sql(text(sql), conn, params=params)
-
         if df.empty:
             return jsonify([])
-
         coords = df[['lat', 'lon']].values
         if len(coords) > 1:
             radians = np.deg2rad(coords)
-            db = DBSCAN(eps=cluster_eps / 6371.0, min_samples=1, algorithm='ball_tree', metric='haversine') 
+            db = DBSCAN(eps=cluster_eps / 6371.0, min_samples=1, algorithm='ball_tree', metric='haversine')
             labels = db.fit_predict(radians)
-
             aggregated = []
             for label in np.unique(labels):
-                if label == -1: continue 
+                if label == -1: continue
                 cluster_df = df[labels == label]
                 agg_lat = cluster_df['lat'].mean()
                 agg_lon = cluster_df['lon'].mean()
@@ -610,12 +682,10 @@ def get_flights_coords():
                     'intensity': agg_intensity
                 })
             return jsonify(aggregated), 200
-
         return jsonify(df.to_dict(orient='records')), 200
     except Exception as e:
         app.logger.error(f"Error in flights/coords: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @bp.route('/regions/flights', methods=['GET'])
 #@oidc.accept_token()
 def get_regions_flights():
@@ -655,7 +725,7 @@ def get_regions_flights():
     except Exception as e:
         app.logger.error(f"Error in regions/flights: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
+   
 @bp.route('/compare', methods=['GET'])
 #@oidc.accept_token()
 def compare_periods():
@@ -666,40 +736,32 @@ def compare_periods():
         month1 = request.args.get('month1')
         year2 = request.args.get('year2')
         month2 = request.args.get('month2')
-        metric = request.args.get('metric', 'count')  
-
+        metric = request.args.get('metric', 'count')
         if not (year1 and year2):
             return jsonify({"error": "Required: year1 and year2"}), 400
         if metric not in ['count', 'avg_duration']:
             return jsonify({"error": "Invalid metric (count or avg_duration)"}), 400
-
         sql_base = "SELECT flight_id, duration_min FROM flights WHERE EXTRACT(YEAR FROM dep_date) = :year"
         params1 = {'year': int(year1)}
         params2 = {'year': int(year2)}
-
         if month1:
             sql_base += " AND EXTRACT(MONTH FROM dep_date) = :month"
             params1['month'] = int(month1)
         if month2:
             sql_base += " AND EXTRACT(MONTH FROM dep_date) = :month"
             params2['month'] = int(month2)
-
         with engine.connect() as conn:
             df1 = pd.read_sql(text(sql_base), conn, params=params1)
             df2 = pd.read_sql(text(sql_base), conn, params=params2)
-
         if metric == 'count':
             val1 = len(df1)
             val2 = len(df2)
-        else:  
+        else:
             val1 = df1['duration_min'].mean() if not df1.empty else 0
             val2 = df2['duration_min'].mean() if not df2.empty else 0
-
         diff_percent = ((val2 - val1) / val1 * 100) if val1 > 0 else None
-
         period1_label = f"{year1}-{month1:02d}" if month1 else year1
         period2_label = f"{year2}-{month2:02d}" if month2 else year2
-
         return jsonify({
             period1_label: {"value": val1},
             period2_label: {"value": val2},
@@ -708,7 +770,6 @@ def compare_periods():
     except Exception as e:
         app.logger.error(f"Error in compare: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 @bp.route('/forecast', methods=['GET'])
 #@oidc.accept_token()
 def forecast_period():
@@ -716,41 +777,35 @@ def forecast_period():
         #raise Unauthorized("Missing or invalid authorization token")
     try:
         year = int(request.args.get('year', 2025))
-        month = request.args.get('month')  
-        metric = request.args.get('metric', 'count')  
-
+        month = request.args.get('month')
+        metric = request.args.get('metric', 'count')
         if metric not in ['count', 'avg_duration']:
             return jsonify({"error": "Invalid metric (count or avg_duration)"}), 400
-
         sql = """
-            SELECT EXTRACT(MONTH FROM dep_date) AS month, flight_id, duration_min 
-            FROM flights 
+            SELECT EXTRACT(MONTH FROM dep_date) AS month, flight_id, duration_min
+            FROM flights
             WHERE EXTRACT(YEAR FROM dep_date) = :year AND dep_date <= CURRENT_DATE
             GROUP BY month, flight_id, duration_min
         """
         with engine.connect() as conn:
             df = pd.read_sql(text(sql), conn, params={'year': year})
-
         if df.empty:
             return jsonify({"error": "No historical data for forecast"}), 404
-
         if metric == 'count':
             monthly = df.groupby('month').size().reset_index(name='value')
         else:
             monthly = df.groupby('month')['duration_min'].mean().reset_index(name='value')
-
         X = np.array(monthly['month']).reshape(-1, 1)
         y = monthly['value']
         model = LinearRegression()
         model.fit(X, y)
-
-        if month:  
+        if month:
             pred_month = int(month)
             if pred_month <= max(monthly['month']):
                 return jsonify({"error": "Month already passed, use actual data"}), 400
             pred = model.predict([[pred_month]])[0]
             return jsonify({f"{year}-{pred_month:02d}": {"predicted_value": pred}}), 200
-        else:  
+        else:
             current_max_month = max(monthly['month'])
             remaining_months = range(int(current_max_month) + 1, 13)
             preds = [model.predict([[m]])[0] for m in remaining_months]
@@ -759,20 +814,19 @@ def forecast_period():
     except Exception as e:
         app.logger.error(f"Error in forecast: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
-from authlib.integrations.flask_client import OAuthError  # Добавьте импорт если нужно
-
+   
+from authlib.integrations.flask_client import OAuthError # Добавьте импорт если нужно
 @app.route('/auth/login')
 def login():
     try:
         redirect_uri = app.config.get('OVERWRITE_REDIRECT_URI', 'http://localhost:5000/oidc_callback')
-        auth_uri, state = oidc.client.create_authorization_url(  # Изменено на oidc.client
+        auth_uri, state = oidc.client.create_authorization_url( # Изменено на oidc.client
             oidc.client.metadata['authorization_endpoint'],
             redirect_uri=redirect_uri,
-            scope='openid profile email'  # Scopes по нужде, настройте в Keycloak
+            scope='openid profile email' # Scopes по нужде, настройте в Keycloak
         )
-        auth_uri = auth_uri.replace('keycloak:8080', 'localhost:8080')  # Замена host для browser
-        session['oidc_state'] = state  # Защита от CSRF
+        auth_uri = auth_uri.replace('keycloak:8080', 'localhost:8080') # Замена host для browser
+        session['oidc_state'] = state # Защита от CSRF
         return redirect(auth_uri)
     except OAuthError as e:
         app.logger.error(f"OAuth error in login: {str(e)}")
@@ -780,31 +834,27 @@ def login():
     except Exception as e:
         app.logger.error(f"Unexpected error in login: {str(e)}")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
-
 @app.route('/oidc_callback')
 def oidc_callback():
     if 'error' in request.args:
         return jsonify({"error": request.args['error']}), 400
-
     if 'code' not in request.args:
         return jsonify({"error": "No authorization code"}), 400
-
     # Проверка state против CSRF
     if session.get('oidc_state') != request.args.get('state'):
         return jsonify({"error": "Invalid state parameter"}), 403
-
     try:
         # Обмен code на token
-        token = oidc.client.authorize_access_token(  # Изменено на oidc.client
-            request.url,  # Полный callback URL
+        token = oidc.client.authorize_access_token( # Изменено на oidc.client
+            request.url, # Полный callback URL
             code=request.args['code'],
             redirect_uri=app.config['OVERWRITE_REDIRECT_URI']
         )
         # Получение userinfo
-        userinfo = oidc.client.userinfo(token=token['access_token'])  # Изменено на oidc.client
+        userinfo = oidc.client.userinfo(token=token['access_token']) # Изменено на oidc.client
         session['oidc_token'] = token
         session['userinfo'] = userinfo
-        session.pop('oidc_state', None)  # Очистка
+        session.pop('oidc_state', None) # Очистка
         app.logger.info("Successful login")
         # Для теста API: Вернуть token (в prod — redirect('/'))
         return jsonify({
@@ -819,20 +869,17 @@ def oidc_callback():
     except Exception as e:
         app.logger.error(f"Unexpected error in callback: {str(e)}")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
-
 @app.route('/auth/logout')
 def logout():
     oidc.logout()
     return redirect('/')
-
 @app.route('/')
 def index():
     if 'oidc_token' in session:
         return jsonify({"message": "Logged in", "userinfo": session.get('userinfo')})
     return jsonify({"message": "Welcome, please login"}), 200
-        
+       
 app.register_blueprint(bp)
-
 if __name__ == '__main__':
     with engine.connect() as conn:
         conn.execute(text("""
